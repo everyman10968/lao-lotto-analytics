@@ -391,6 +391,7 @@ export default function App() {
   };
 
   const currentPredictiveResult = computePrediction(rawDraws, predictiveTarget === 'bottom' ? 'head_2digit' : 'tail_2digit', predictiveAlgo);
+  const currentBacktestResult = computePredictionBacktest(predictiveAlgo, predictiveTarget);
   const top50TopStats = computeTop50Stats('top');
   const top50BottomStats = computeTop50Stats('bottom');
   const top50Stats = computeTop50Stats(top50Mode);
