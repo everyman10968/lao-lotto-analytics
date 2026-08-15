@@ -35,6 +35,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('top50');
   const [top50Mode, setTop50Mode] = useState('top');
   const [table2DMode, setTable2DMode] = useState('top');
+  const [selectedDayFilter, setSelectedDayFilter] = useState('all'); // 'all', 'จันทร์', 'พุธ', 'ศุกร์'
   const [rawDraws, setRawDraws] = useState([]);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
@@ -123,11 +124,15 @@ export default function App() {
 
   const top50Stats = computeTop50Stats(top50Mode);
 
+  // Compute 2D Frequency Table by Selected Day
   const compute2DTable = () => {
-    if (!rawDraws.length) return [];
+    if (!rawDraws.length) return { list: [], total: 0 };
     const field = table2DMode === 'bottom' ? 'head_2digit' : 'tail_2digit';
     
     let filtered = [...rawDraws];
+    if (selectedDayFilter !== 'all') {
+      filtered = filtered.filter(r => getThaiDayOfWeek(r.draw_date) === selectedDayFilter);
+    }
     if (startDate) filtered = filtered.filter(r => r.draw_date >= startDate);
     if (endDate) filtered = filtered.filter(r => r.draw_date <= endDate);
 
@@ -142,10 +147,50 @@ export default function App() {
       percentage: total > 0 ? ((freqMap[num] / total) * 100).toFixed(1) : 0
     }));
 
-    return list.sort((a, b) => b.count - a.count || parseInt(a.number) - parseInt(b.number));
+    return {
+      list: list.sort((a, b) => b.count - a.count || parseInt(a.number) - parseInt(b.number)),
+      total
+    };
   };
 
-  const table2DList = compute2DTable();
+  // Compute Single Digit Frequency (เลขวิ่ง 0-9) by Selected Day
+  const computeSingleDigitTable = () => {
+    if (!rawDraws.length) return { list: [], total: 0 };
+    const field = table2DMode === 'bottom' ? 'head_2digit' : 'tail_2digit';
+
+    let filtered = [...rawDraws];
+    if (selectedDayFilter !== 'all') {
+      filtered = filtered.filter(r => getThaiDayOfWeek(r.draw_date) === selectedDayFilter);
+    }
+    if (startDate) filtered = filtered.filter(r => r.draw_date >= startDate);
+    if (endDate) filtered = filtered.filter(r => r.draw_date <= endDate);
+
+    const singleFreq = Array(10).fill(0);
+    filtered.forEach(r => {
+      const num2 = (r[field] || '').padStart(2, '0');
+      const d1 = parseInt(num2[0], 10);
+      const d2 = parseInt(num2[1], 10);
+      if (!isNaN(d1)) singleFreq[d1]++;
+      if (!isNaN(d2)) singleFreq[d2]++;
+    });
+
+    const totalDraws = filtered.length;
+    const totalDigits = totalDraws * 2; // Each 2-digit number contains 2 single digits
+
+    const list = singleFreq.map((count, digit) => ({
+      digit: digit.toString(),
+      count,
+      percentage: totalDraws > 0 ? ((count / totalDraws) * 100).toFixed(1) : 0
+    }));
+
+    return {
+      list: list.sort((a, b) => b.count - a.count || parseInt(a.digit) - parseInt(b.digit)),
+      totalDraws
+    };
+  };
+
+  const { list: table2DList, total: table2DTotalDraws } = compute2DTable();
+  const { list: singleDigitList } = computeSingleDigitTable();
 
   const handleCopyNumbers = () => {
     if (!top50Stats) return;
@@ -223,7 +268,7 @@ export default function App() {
         <div style={{ display: 'flex', gap: '10px', borderBottom: '2px solid #1e293b', paddingBottom: '10px', marginBottom: '24px', overflowX: 'auto' }}>
           {[
             { id: 'top50', label: '🎯 วิเคราะห์ชุดเลข 50 ตัว' },
-            { id: '2d-table', label: '📊 ตารางสถิติ 2 ตัว (มาก ➔ น้อย)' },
+            { id: '2d-table', label: '📊 สถิติ 2 ตัว & เลขเด่นเดี่ยว (วิ่ง)' },
             { id: 'history', label: '📋 ตารางประวัติผลรางวัล' }
           ].map(tab => (
             <button
@@ -250,7 +295,7 @@ export default function App() {
         {/* TAB 1: Top 50 Numbers */}
         {activeTab === 'top50' && top50Stats && (
           <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '18px', padding: '28px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', itemsCenter: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
               <div>
                 <h3 style={{ fontSize: '20px', fontWeight: '600', margin: 0, color: '#f8fafc' }}>🎯 วิเคราะห์ระบบคัดเลือกชุดเลข 50 ตัว (ปี 2569 เป็นต้นไป)</h3>
                 <p style={{ fontSize: '13px', color: '#94a3b8', marginTop: '6px' }}>คัดเลือก 50 ตัวเลขที่มีอัตราความถี่สูงสุด ผิดติดกันไม่เกิน 2 งวด</p>
@@ -329,54 +374,132 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 2: 2D Statistics Table */}
+        {/* TAB 2: 2D Statistics & Single Digit Frequency */}
         {activeTab === '2d-table' && (
-          <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '18px', padding: '28px' }}>
+          <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '18px', padding: '28px', spaceY: '24px' }}>
+            
+            {/* Top Switcher & Day Filter Bar */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
-              <h3 style={{ fontSize: '20px', fontWeight: '600', margin: 0, color: '#f8fafc' }}>📊 ตารางสถิติเลข 2 ตัว (เรียงจากออกบ่อยสุด ➔ น้อยสุด)</h3>
-              
-              <div style={{ display: 'flex', gap: '8px', background: '#0f172a', padding: '6px', borderRadius: '10px', border: '1px solid #334155' }}>
-                <button
-                  onClick={() => setTable2DMode('top')}
-                  style={{ padding: '8px 18px', borderRadius: '8px', border: 'none', backgroundColor: table2DMode === 'top' ? '#6366f1' : 'transparent', color: '#fff', cursor: 'pointer', fontWeight: '500', fontSize: '13px' }}
-                >
-                  🔵 เลขบน (2 ตัวท้าย)
-                </button>
-                <button
-                  onClick={() => setTable2DMode('bottom')}
-                  style={{ padding: '8px 18px', borderRadius: '8px', border: 'none', backgroundColor: table2DMode === 'bottom' ? '#10b981' : 'transparent', color: '#fff', cursor: 'pointer', fontWeight: '500', fontSize: '13px' }}
-                >
-                  🟢 เลขล่าง (2 ตัวหน้า)
-                </button>
+              <div>
+                <h3 style={{ fontSize: '20px', fontWeight: '600', margin: 0, color: '#f8fafc' }}>
+                  📊 สถิติเลข 2 ตัว และ สถิติเลขตัวเดียว (เลขวิ่ง 0-9) แยกตามวันที่ออก
+                </h3>
+                <p style={{ fontSize: '13px', color: '#94a3b8', marginTop: '6px' }}>
+                  คำนวณจากทั้งหมด {table2DTotalDraws} งวด {selectedDayFilter !== 'all' ? `(เฉพาะวัน${selectedDayFilter})` : '(ทุกวัน)'}
+                </p>
+              </div>
+
+              {/* Day Filter Switches */}
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: '6px', background: '#0f172a', padding: '4px', borderRadius: '10px', border: '1px solid #334155' }}>
+                  <button
+                    onClick={() => setTable2DMode('top')}
+                    style={{ padding: '6px 14px', borderRadius: '6px', border: 'none', backgroundColor: table2DMode === 'top' ? '#6366f1' : 'transparent', color: '#fff', cursor: 'pointer', fontWeight: '500', fontSize: '13px' }}
+                  >
+                    🔵 เลขบน (2 ตัวท้าย)
+                  </button>
+                  <button
+                    onClick={() => setTable2DMode('bottom')}
+                    style={{ padding: '6px 14px', borderRadius: '6px', border: 'none', backgroundColor: table2DMode === 'bottom' ? '#10b981' : 'transparent', color: '#fff', cursor: 'pointer', fontWeight: '500', fontSize: '13px' }}
+                  >
+                    🟢 เลขล่าง (2 ตัวหน้า)
+                  </button>
+                </div>
+
+                {/* Day of Week Selector */}
+                <div style={{ display: 'flex', gap: '6px', background: '#0f172a', padding: '4px', borderRadius: '10px', border: '1px solid #334155' }}>
+                  {['all', 'จันทร์', 'พุธ', 'ศุกร์'].map(d => (
+                    <button
+                      key={d}
+                      onClick={() => setSelectedDayFilter(d)}
+                      style={{
+                        padding: '6px 14px',
+                        borderRadius: '6px',
+                        border: 'none',
+                        backgroundColor: selectedDayFilter === d ? '#f59e0b' : 'transparent',
+                        color: selectedDayFilter === d ? '#000' : '#94a3b8',
+                        cursor: 'pointer',
+                        fontWeight: '600',
+                        fontSize: '13px'
+                      }}
+                    >
+                      {d === 'all' ? 'ทุกวัน' : `วัน${d}`}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
-            <div style={{ overflowX: 'auto', maxHeight: '520px' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '15px' }}>
-                <thead style={{ position: 'sticky', top: 0, backgroundColor: '#0f172a', color: '#94a3b8' }}>
-                  <tr>
-                    <th style={{ padding: '14px', textAlign: 'center', width: '70px' }}>อันดับ</th>
-                    <th style={{ padding: '14px' }}>เลข 2 ตัว</th>
-                    <th style={{ padding: '14px' }}>จำนวนครั้งที่ออก</th>
-                    <th style={{ padding: '14px' }}>สัดส่วน (%)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {table2DList.map((item, idx) => (
-                    <tr key={idx} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
-                      <td style={{ padding: '14px', textAlign: 'center', color: '#94a3b8', fontWeight: '600' }}>{idx + 1}</td>
-                      <td style={{ padding: '14px' }}>
-                        <span style={{ backgroundColor: table2DMode === 'bottom' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(99, 102, 241, 0.15)', border: table2DMode === 'bottom' ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(99, 102, 241, 0.3)', color: table2DMode === 'bottom' ? '#34d399' : '#818cf8', fontWeight: '700', padding: '4px 10px', borderRadius: '6px' }}>
-                          {item.number}
-                        </span>
-                      </td>
-                      <td style={{ padding: '14px', fontWeight: '600', color: '#f8fafc' }}>{item.count} ครั้ง</td>
-                      <td style={{ padding: '14px', color: '#f59e0b', fontWeight: '600' }}>{item.percentage}%</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            {/* SECTION: Single Digit Frequency (เลขเด่นตัวเดียว / เลขวิ่ง 0-9) */}
+            <div style={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '14px', padding: '20px', marginBottom: '24px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#fbbf24', margin: 0 }}>
+                  🔥 สถิติความถี่ "เลขตัวเดียว / เลขวิ่ง" (0 - 9) ใน {table2DMode === 'bottom' ? 'เลขล่าง' : 'เลขบน'}
+                </h4>
+                <span style={{ fontSize: '12px', color: '#94a3b8' }}>
+                  เรียงจากออกบ่อยที่สุด ➔ น้อยที่สุด
+                </span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: '12px' }}>
+                {singleDigitList.map((item, idx) => (
+                  <div 
+                    key={idx} 
+                    style={{ 
+                      backgroundColor: idx < 3 ? 'rgba(245, 158, 11, 0.15)' : '#1e293b', 
+                      border: idx < 3 ? '1px solid #f59e0b' : '1px solid #334155', 
+                      borderRadius: '12px', 
+                      padding: '12px', 
+                      textAlign: 'center' 
+                    }}
+                  >
+                    <div style={{ fontSize: '22px', fontWeight: '700', color: idx < 3 ? '#f59e0b' : '#818cf8' }}>
+                      เลข {item.digit}
+                    </div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#f8fafc', marginTop: '4px' }}>
+                      {item.count} ครั้ง
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#34d399', marginTop: '2px' }}>
+                      {item.percentage}% ของงวด
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
+
+            {/* SECTION: 2-Digit Full Frequency Table */}
+            <div style={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '14px', padding: '20px' }}>
+              <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#f8fafc', marginBottom: '14px' }}>
+                📊 ตารางสถิติเลข 2 ตัว (00 - 99) {selectedDayFilter !== 'all' ? `ประจำวัน${selectedDayFilter}` : ''}
+              </h4>
+              <div style={{ overflowX: 'auto', maxHeight: '420px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '15px' }}>
+                  <thead style={{ position: 'sticky', top: 0, backgroundColor: '#090d16', color: '#94a3b8' }}>
+                    <tr>
+                      <th style={{ padding: '14px', textAlign: 'center', width: '70px' }}>อันดับ</th>
+                      <th style={{ padding: '14px' }}>เลข 2 ตัว</th>
+                      <th style={{ padding: '14px' }}>จำนวนครั้งที่ออก</th>
+                      <th style={{ padding: '14px' }}>สัดส่วน (%)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {table2DList.map((item, idx) => (
+                      <tr key={idx} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                        <td style={{ padding: '14px', textAlign: 'center', color: '#94a3b8', fontWeight: '600' }}>{idx + 1}</td>
+                        <td style={{ padding: '14px' }}>
+                          <span style={{ backgroundColor: table2DMode === 'bottom' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(99, 102, 241, 0.15)', border: table2DMode === 'bottom' ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(99, 102, 241, 0.3)', color: table2DMode === 'bottom' ? '#34d399' : '#818cf8', fontWeight: '700', padding: '4px 10px', borderRadius: '6px' }}>
+                            {item.number}
+                          </span>
+                        </td>
+                        <td style={{ padding: '14px', fontWeight: '600', color: '#f8fafc' }}>{item.count} ครั้ง</td>
+                        <td style={{ padding: '14px', color: '#f59e0b', fontWeight: '600' }}>{item.percentage}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
           </div>
         )}
 
