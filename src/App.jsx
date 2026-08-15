@@ -393,7 +393,9 @@ export default function App() {
   };
 
   const currentPredictiveResult = computePrediction(rawDraws, predictiveTarget === 'bottom' ? 'head_2digit' : 'tail_2digit', predictiveAlgo);
-  const currentBacktestResult = computePredictionBacktest(predictiveAlgo, predictiveTarget);
+  const top50TopStats = computeTop50Stats('top');
+  const top50BottomStats = computeTop50Stats('bottom');
+  const top50Stats = computeTop50Stats(top50Mode);
 
   return (
     <div className="app-container" style={{ backgroundColor: '#0b0f19', color: '#f3f4f6', minHeight: '100vh', padding: '24px', fontFamily: "'Kanit', sans-serif" }}>
@@ -447,17 +449,17 @@ export default function App() {
 
           <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '18px', padding: '22px' }}>
             <span className="stat-card-title" style={{ fontSize: '13px', color: '#94a3b8', fontWeight: '500' }}>อัตราถูกรางวัลสะสม (เลขบน)</span>
-            <div className="stat-card-value" style={{ fontSize: '32px', fontWeight: '700', color: '#f59e0b', margin: '8px 0' }}>{top50Stats ? `${top50Stats.hitRate}%` : '-'}</div>
+            <div className="stat-card-value" style={{ fontSize: '32px', fontWeight: '700', color: '#f59e0b', margin: '8px 0' }}>{top50TopStats ? `${top50TopStats.hitRate}%` : '-'}</div>
             <span style={{ fontSize: '12px', color: '#34d399' }}>คุมผิดไม่เกิน 2 งวด</span>
           </div>
 
           <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '18px', padding: '22px' }}>
-            <span className="stat-card-title" style={{ fontSize: '13px', color: '#94a3b8', fontWeight: '500' }}>ผิดติดต่อกันนานที่สุด</span>
-            <div className="stat-card-value" style={{ fontSize: '32px', fontWeight: '700', color: top50Stats && top50Stats.maxStreak <= 2 ? '#34d399' : '#f87171', margin: '8px 0' }}>
-              {top50Stats ? `${top50Stats.maxStreak} งวด` : '-'}
+            <span className="stat-card-title" style={{ fontSize: '13px', color: '#94a3b8', fontWeight: '500' }}>อัตราถูกรางวัลสะสม (เลขล่าง)</span>
+            <div className="stat-card-value" style={{ fontSize: '32px', fontWeight: '700', color: '#10b981', margin: '8px 0' }}>
+              {top50BottomStats ? `${top50BottomStats.hitRate}%` : '-'}
             </div>
-            <span style={{ fontSize: '12px', color: top50Stats && top50Stats.maxStreak <= 2 ? '#34d399' : '#f59e0b' }}>
-              {top50Stats && top50Stats.maxStreak <= 2 ? 'คุมสถิติผิดไม่เกิน 2 งวด' : `สูงสุด ${top50Stats?.maxStreak} งวด`}
+            <span style={{ fontSize: '12px', color: '#34d399' }}>
+              คุมผิดไม่เกิน 2 งวด
             </span>
           </div>
         </div>
