@@ -6,6 +6,15 @@ import { RefreshCw, Copy, Check, TrendingUp, Filter, Calendar } from 'lucide-rea
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, LineElement, PointElement, ArcElement);
 
+const DAY_NAMES = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
+
+function getThaiDayOfWeek(dateStr) {
+  if (!dateStr) return '-';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '-';
+  return DAY_NAMES[d.getUTCDay()] || '-';
+}
+
 const OPTIMIZED_50_TOP_2026 = [
   '02', '06', '08', '10', '11', '12', '13', '14', '15', '17', 
   '18', '19', '20', '21', '24', '27', '28', '30', '31', '32', 
@@ -148,23 +157,23 @@ export default function App() {
   const latestDraw = rawDraws.length > 0 ? rawDraws[rawDraws.length - 1] : null;
 
   return (
-    <div style={{ backgroundColor: '#090d16', color: '#f3f4f6', minHeight: '100vh', padding: '24px', fontFamily: 'sans-serif' }}>
-      <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+    <div style={{ backgroundColor: '#0b0f19', color: '#f3f4f6', minHeight: '100vh', padding: '24px', fontFamily: "'Kanit', sans-serif" }}>
+      <div style={{ maxWidth: '1240px', margin: '0 auto' }}>
 
         {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1f293d', paddingBottom: '16px', marginBottom: '24px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', paddingBottom: '20px', marginBottom: '28px', flexWrap: 'wrap', gap: '16px' }}>
           <div>
-            <h1 style={{ fontSize: '24px', fontWeight: 'bold', background: 'linear-gradient(90deg, #f59e0b, #ec4899)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', margin: 0 }}>
+            <h1 style={{ fontSize: '26px', fontWeight: '700', background: 'linear-gradient(135deg, #fbbf24 0%, #f472b6 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
               🇱🇦 ระบบสถิติหวยลาว 4 หลัก (Lao Lotto Analytics)
             </h1>
-            <p style={{ fontSize: '13px', color: '#9ca3af', marginTop: '4px' }}>
-              วิเคราะห์ผลรางวัลเริ่มมกราคม 2569 - ปัจจุบัน • คุมสถิติผิดไม่เกิน 2 งวดสูงสุด
+            <p style={{ fontSize: '14px', color: '#94a3b8', marginTop: '6px', fontWeight: '400' }}>
+              วิเคราะห์ผลรางวัลตั้งแต่มกราคม 2569 - ปัจจุบัน • คุมสถิติผิดไม่เกิน 2 งวดสูงสุด
             </p>
           </div>
 
           <button
             onClick={fetchLaoLottoData}
-            style={{ backgroundColor: '#10b981', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '600' }}
+            style={{ backgroundColor: '#10b981', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '500', fontSize: '14px', transition: 'all 0.2s' }}
           >
             <RefreshCw size={16} className={loading ? 'spin' : ''} />
             <span>รีเฟรชข้อมูล</span>
@@ -172,46 +181,46 @@ export default function App() {
         </div>
 
         {/* Highlight Cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-          <div style={{ background: 'linear-gradient(135deg, #1e1b4b, #311b92)', border: '1px solid #6366f1', borderRadius: '16px', padding: '20px' }}>
-            <span style={{ fontSize: '12px', color: '#a5b4fc' }}>ผลหวยลาวงวดล่าสุด (4 หลัก)</span>
-            <div style={{ display: 'flex', gap: '8px', margin: '10px 0' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '20px', marginBottom: '28px' }}>
+          <div style={{ background: 'linear-gradient(135deg, #1e1b4b 0%, #311b92 100%)', border: '1px solid #6366f1', borderRadius: '18px', padding: '22px', boxShadow: '0 10px 25px -5px rgba(99, 102, 241, 0.2)' }}>
+            <span style={{ fontSize: '13px', color: '#c7d2fe', fontWeight: '500' }}>ผลหวยลาวงวดล่าสุด (4 หลัก)</span>
+            <div style={{ display: 'flex', gap: '10px', margin: '14px 0' }}>
               {latestDraw ? (
                 latestDraw.number_4digit.padStart(4, '0').split('').map((d, i) => (
-                  <span key={i} style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'linear-gradient(135deg, #f59e0b, #d97706)', color: '#000', fontWeight: 'bold', fontSize: '18px', display: 'flex', alignItems: 'center', justifyCenter: 'center', textAlign: 'center', lineHeight: '38px', margin: '0 auto' }}>
+                  <span key={i} style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'linear-gradient(135deg, #f59e0b, #d97706)', color: '#000', fontWeight: '700', fontSize: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(245, 158, 11, 0.4)' }}>
                     {d}
                   </span>
                 ))
               ) : (
-                <span style={{ color: '#6b7280' }}>กำลังโหลด...</span>
+                <span style={{ color: '#64748b' }}>กำลังโหลด...</span>
               )}
             </div>
-            <span style={{ fontSize: '12px', color: '#34d399' }}>
-              {latestDraw ? `ออกเมื่อวัน${latestDraw.day_of_week}ที่ ${new Date(latestDraw.draw_date).toLocaleDateString('th-TH')}` : ''}
+            <span style={{ fontSize: '13px', color: '#34d399', fontWeight: '500' }}>
+              {latestDraw ? `ออกเมื่อวัน${getThaiDayOfWeek(latestDraw.draw_date)}ที่ ${new Date(latestDraw.draw_date).toLocaleDateString('th-TH')}` : ''}
             </span>
           </div>
 
-          <div style={{ backgroundColor: '#111827', border: '1px solid #1f293d', borderRadius: '16px', padding: '20px' }}>
-            <span style={{ fontSize: '12px', color: '#9ca3af' }}>จำนวนงวดที่จัดเก็บ (ปี 2569)</span>
-            <div style={{ fontSize: '28px', fontWeight: 'bold', margin: '6px 0' }}>{rawDraws.length} งวด</div>
-            <span style={{ fontSize: '12px', color: '#34d399' }}>ข้อมูลอัปเดตแบบ Realtime</span>
+          <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '18px', padding: '22px' }}>
+            <span style={{ fontSize: '13px', color: '#94a3b8', fontWeight: '500' }}>จำนวนงวดที่จัดเก็บ (ปี 2569)</span>
+            <div style={{ fontSize: '32px', fontWeight: '700', margin: '8px 0', color: '#f8fafc' }}>{rawDraws.length} งวด</div>
+            <span style={{ fontSize: '13px', color: '#34d399' }}>ข้อมูลอัปเดตแบบ Realtime</span>
           </div>
 
-          <div style={{ backgroundColor: '#111827', border: '1px solid #1f293d', borderRadius: '16px', padding: '20px' }}>
-            <span style={{ fontSize: '12px', color: '#9ca3af' }}>อัตราถูกรางวัลสะสม (เลขบน)</span>
-            <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#f59e0b', margin: '6px 0' }}>{top50Stats ? `${top50Stats.hitRate}%` : '-'}</div>
-            <span style={{ fontSize: '12px', color: '#34d399' }}>คุมผิดไม่เกิน 2 งวด</span>
+          <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '18px', padding: '22px' }}>
+            <span style={{ fontSize: '13px', color: '#94a3b8', fontWeight: '500' }}>อัตราถูกรางวัลสะสม (เลขบน)</span>
+            <div style={{ fontSize: '32px', fontWeight: '700', color: '#f59e0b', margin: '8px 0' }}>{top50Stats ? `${top50Stats.hitRate}%` : '-'}</div>
+            <span style={{ fontSize: '13px', color: '#34d399' }}>คุมผิดไม่เกิน 2 งวด</span>
           </div>
 
-          <div style={{ backgroundColor: '#111827', border: '1px solid #1f293d', borderRadius: '16px', padding: '20px' }}>
-            <span style={{ fontSize: '12px', color: '#9ca3af' }}>ผิดติดต่อกันนานที่สุด</span>
-            <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#818cf8', margin: '6px 0' }}>2 งวด</div>
-            <span style={{ fontSize: '12px', color: '#34d399' }}>ไม่เคยผิดติดกัน 3 งวดขึ้นไป</span>
+          <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '18px', padding: '22px' }}>
+            <span style={{ fontSize: '13px', color: '#94a3b8', fontWeight: '500' }}>ผิดติดต่อกันนานที่สุด</span>
+            <div style={{ fontSize: '32px', fontWeight: '700', color: '#818cf8', margin: '8px 0' }}>2 งวด</div>
+            <span style={{ fontSize: '13px', color: '#34d399' }}>ไม่เคยผิดติดกัน 3 งวดขึ้นไป</span>
           </div>
         </div>
 
         {/* Navigation Tabs */}
-        <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid #1f293d', paddingBottom: '8px', marginBottom: '20px' }}>
+        <div style={{ display: 'flex', gap: '10px', borderBottom: '2px solid #1e293b', paddingBottom: '10px', marginBottom: '24px', overflowX: 'auto' }}>
           {[
             { id: 'top50', label: '🎯 วิเคราะห์ชุดเลข 50 ตัว' },
             { id: '2d-table', label: '📊 ตารางสถิติ 2 ตัว (มาก ➔ น้อย)' },
@@ -221,13 +230,16 @@ export default function App() {
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               style={{
-                padding: '8px 16px',
-                borderRadius: '8px',
+                padding: '10px 20px',
+                borderRadius: '10px',
                 border: 'none',
-                backgroundColor: activeTab === tab.id ? '#4f46e5' : 'transparent',
-                color: activeTab === tab.id ? '#fff' : '#9ca3af',
-                fontWeight: '600',
-                cursor: 'pointer'
+                backgroundColor: activeTab === tab.id ? '#6366f1' : 'transparent',
+                color: activeTab === tab.id ? '#fff' : '#94a3b8',
+                fontWeight: '500',
+                fontSize: '15px',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                whiteSpace: 'nowrap'
               }}
             >
               {tab.label}
@@ -237,23 +249,23 @@ export default function App() {
 
         {/* TAB 1: Top 50 Numbers */}
         {activeTab === 'top50' && top50Stats && (
-          <div style={{ backgroundColor: '#111827', border: '1px solid #1f293d', borderRadius: '16px', padding: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+          <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '18px', padding: '28px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
               <div>
-                <h3 style={{ fontSize: '18px', fontWeight: 'bold', margin: 0 }}>🎯 วิเคราะห์ระบบคัดเลือกชุดเลข 50 ตัว (ปี 2569 เป็นต้นไป)</h3>
-                <p style={{ fontSize: '13px', color: '#9ca3af', marginTop: '4px' }}>คัดเลือก 50 ตัวเลขที่มีอัตราความถี่สูงสุด ผิดติดกันไม่เกิน 2 งวด</p>
+                <h3 style={{ fontSize: '20px', fontWeight: '600', margin: 0, color: '#f8fafc' }}>🎯 วิเคราะห์ระบบคัดเลือกชุดเลข 50 ตัว (ปี 2569 เป็นต้นไป)</h3>
+                <p style={{ fontSize: '13px', color: '#94a3b8', marginTop: '6px' }}>คัดเลือก 50 ตัวเลขที่มีอัตราความถี่สูงสุด ผิดติดกันไม่เกิน 2 งวด</p>
               </div>
 
-              <div style={{ display: 'flex', gap: '6px', background: '#030712', padding: '4px', borderRadius: '8px' }}>
+              <div style={{ display: 'flex', gap: '8px', background: '#0f172a', padding: '6px', borderRadius: '10px', border: '1px solid #334155' }}>
                 <button
                   onClick={() => setTop50Mode('top')}
-                  style={{ padding: '6px 14px', borderRadius: '6px', border: 'none', backgroundColor: top50Mode === 'top' ? '#4f46e5' : 'transparent', color: '#fff', cursor: 'pointer', fontWeight: '600', fontSize: '12px' }}
+                  style={{ padding: '8px 18px', borderRadius: '8px', border: 'none', backgroundColor: top50Mode === 'top' ? '#6366f1' : 'transparent', color: '#fff', cursor: 'pointer', fontWeight: '500', fontSize: '13px' }}
                 >
                   🔵 เลขบน (2 ตัวท้าย)
                 </button>
                 <button
                   onClick={() => setTop50Mode('bottom')}
-                  style={{ padding: '6px 14px', borderRadius: '6px', border: 'none', backgroundColor: top50Mode === 'bottom' ? '#059669' : 'transparent', color: '#fff', cursor: 'pointer', fontWeight: '600', fontSize: '12px' }}
+                  style={{ padding: '8px 18px', borderRadius: '8px', border: 'none', backgroundColor: top50Mode === 'bottom' ? '#10b981' : 'transparent', color: '#fff', cursor: 'pointer', fontWeight: '500', fontSize: '13px' }}
                 >
                   🟢 เลขล่าง (2 ตัวหน้า)
                 </button>
@@ -261,11 +273,11 @@ export default function App() {
             </div>
 
             {/* Line Chart */}
-            <div style={{ backgroundColor: '#030712', border: '1px solid #1f293d', borderRadius: '12px', padding: '16px', marginBottom: '20px' }}>
-              <h4 style={{ fontSize: '14px', margin: '0 0 12px 0', color: '#d1d5db' }}>
+            <div style={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '14px', padding: '20px', marginBottom: '24px' }}>
+              <h4 style={{ fontSize: '15px', margin: '0 0 14px 0', color: '#f8fafc', fontWeight: '500' }}>
                 📈 แผนภูมิเส้นแสดงงวดที่ผิดติดต่อกัน ({top50Mode === 'bottom' ? 'เลขล่าง 2 ตัวหน้า' : 'เลขบน 2 ตัวท้าย'})
               </h4>
-              <div style={{ height: '200px' }}>
+              <div style={{ height: '220px' }}>
                 <Line
                   data={{
                     labels: top50Stats.timeline.map(t => t.date),
@@ -292,23 +304,23 @@ export default function App() {
             </div>
 
             {/* 50 Number Pills */}
-            <div style={{ backgroundColor: '#030712', border: '1px dashed #6366f1', borderRadius: '12px', padding: '20px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <strong style={{ color: '#f59e0b', fontSize: '15px' }}>
+            <div style={{ backgroundColor: '#0f172a', border: '1px dashed #818cf8', borderRadius: '14px', padding: '24px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <strong style={{ color: '#f59e0b', fontSize: '16px' }}>
                   📋 ชุดเลข 50 ตัวแนะนำ ({top50Mode === 'bottom' ? 'เลขล่าง' : 'เลขบน'}):
                 </strong>
                 <button
                   onClick={handleCopyNumbers}
-                  style={{ backgroundColor: '#4f46e5', color: '#fff', border: 'none', padding: '6px 14px', borderRadius: '6px', cursor: 'pointer', fontWeight: '600', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                  style={{ backgroundColor: '#6366f1', color: '#fff', border: 'none', padding: '8px 18px', borderRadius: '8px', cursor: 'pointer', fontWeight: '500', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}
                 >
-                  {copied ? <Check size={14} /> : <Copy size={14} />}
+                  {copied ? <Check size={16} /> : <Copy size={16} />}
                   <span>{copied ? 'คัดลอกแล้ว!' : 'คัดลอกเลข 50 ตัว'}</span>
                 </button>
               </div>
 
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
                 {top50Stats.numbers.map((n, idx) => (
-                  <span key={idx} style={{ backgroundColor: 'rgba(99, 102, 241, 0.15)', border: '1px solid rgba(99, 102, 241, 0.4)', color: '#818cf8', fontWeight: 'bold', padding: '4px 10px', borderRadius: '6px', fontSize: '14px' }}>
+                  <span key={idx} style={{ backgroundColor: 'rgba(99, 102, 241, 0.15)', border: '1px solid rgba(99, 102, 241, 0.4)', color: '#818cf8', fontWeight: '600', padding: '6px 12px', borderRadius: '8px', fontSize: '15px' }}>
                     {n}
                   </span>
                 ))}
@@ -319,43 +331,47 @@ export default function App() {
 
         {/* TAB 2: 2D Statistics Table */}
         {activeTab === '2d-table' && (
-          <div style={{ backgroundColor: '#111827', border: '1px solid #1f293d', borderRadius: '16px', padding: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h3 style={{ fontSize: '18px', fontWeight: 'bold', margin: 0 }}>📊 ตารางสถิติเลข 2 ตัว (เรียงจากออกบ่อยสุด ➔ น้อยสุด)</h3>
+          <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '18px', padding: '28px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+              <h3 style={{ fontSize: '20px', fontWeight: '600', margin: 0, color: '#f8fafc' }}>📊 ตารางสถิติเลข 2 ตัว (เรียงจากออกบ่อยสุด ➔ น้อยสุด)</h3>
               
-              <div style={{ display: 'flex', gap: '6px', background: '#030712', padding: '4px', borderRadius: '8px' }}>
+              <div style={{ display: 'flex', gap: '8px', background: '#0f172a', padding: '6px', borderRadius: '10px', border: '1px solid #334155' }}>
                 <button
                   onClick={() => setTable2DMode('top')}
-                  style={{ padding: '6px 14px', borderRadius: '6px', border: 'none', backgroundColor: table2DMode === 'top' ? '#4f46e5' : 'transparent', color: '#fff', cursor: 'pointer', fontWeight: '600', fontSize: '12px' }}
+                  style={{ padding: '8px 18px', borderRadius: '8px', border: 'none', backgroundColor: table2DMode === 'top' ? '#6366f1' : 'transparent', color: '#fff', cursor: 'pointer', fontWeight: '500', fontSize: '13px' }}
                 >
                   🔵 เลขบน (2 ตัวท้าย)
                 </button>
                 <button
                   onClick={() => setTable2DMode('bottom')}
-                  style={{ padding: '6px 14px', borderRadius: '6px', border: 'none', backgroundColor: table2DMode === 'bottom' ? '#059669' : 'transparent', color: '#fff', cursor: 'pointer', fontWeight: '600', fontSize: '12px' }}
+                  style={{ padding: '8px 18px', borderRadius: '8px', border: 'none', backgroundColor: table2DMode === 'bottom' ? '#10b981' : 'transparent', color: '#fff', cursor: 'pointer', fontWeight: '500', fontSize: '13px' }}
                 >
                   🟢 เลขล่าง (2 ตัวหน้า)
                 </button>
               </div>
             </div>
 
-            <div style={{ overflowX: 'auto', maxHeight: '480px' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px' }}>
-                <thead style={{ position: 'sticky', top: 0, backgroundColor: '#030712', color: '#9ca3af' }}>
+            <div style={{ overflowX: 'auto', maxHeight: '520px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '15px' }}>
+                <thead style={{ position: 'sticky', top: 0, backgroundColor: '#0f172a', color: '#94a3b8' }}>
                   <tr>
-                    <th style={{ padding: '12px', textAlign: 'center', width: '60px' }}>อันดับ</th>
-                    <th style={{ padding: '12px' }}>เลข 2 ตัว</th>
-                    <th style={{ padding: '12px' }}>จำนวนครั้งที่ออก</th>
-                    <th style={{ padding: '12px' }}>สัดส่วน (%)</th>
+                    <th style={{ padding: '14px', textAlign: 'center', width: '70px' }}>อันดับ</th>
+                    <th style={{ padding: '14px' }}>เลข 2 ตัว</th>
+                    <th style={{ padding: '14px' }}>จำนวนครั้งที่ออก</th>
+                    <th style={{ padding: '14px' }}>สัดส่วน (%)</th>
                   </tr>
                 </thead>
                 <tbody>
                   {table2DList.map((item, idx) => (
-                    <tr key={idx} style={{ borderBottom: '1px solid #1f293d' }}>
-                      <td style={{ padding: '12px', textAlign: 'center', color: '#9ca3af', fontWeight: 'bold' }}>{idx + 1}</td>
-                      <td style={{ padding: '12px', color: '#f59e0b', fontWeight: 'bold' }}>{item.number}</td>
-                      <td style={{ padding: '12px', fontWeight: 'bold' }}>{item.count} ครั้ง</td>
-                      <td style={{ padding: '12px', color: '#34d399' }}>{item.percentage}%</td>
+                    <tr key={idx} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                      <td style={{ padding: '14px', textAlign: 'center', color: '#94a3b8', fontWeight: '600' }}>{idx + 1}</td>
+                      <td style={{ padding: '14px' }}>
+                        <span style={{ backgroundColor: table2DMode === 'bottom' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(99, 102, 241, 0.15)', border: table2DMode === 'bottom' ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(99, 102, 241, 0.3)', color: table2DMode === 'bottom' ? '#34d399' : '#818cf8', fontWeight: '700', padding: '4px 10px', borderRadius: '6px' }}>
+                          {item.number}
+                        </span>
+                      </td>
+                      <td style={{ padding: '14px', fontWeight: '600', color: '#f8fafc' }}>{item.count} ครั้ง</td>
+                      <td style={{ padding: '14px', color: '#f59e0b', fontWeight: '600' }}>{item.percentage}%</td>
                     </tr>
                   ))}
                 </tbody>
@@ -366,29 +382,41 @@ export default function App() {
 
         {/* TAB 3: History Table */}
         {activeTab === 'history' && (
-          <div style={{ backgroundColor: '#111827', border: '1px solid #1f293d', borderRadius: '16px', padding: '24px' }}>
-            <h3 style={{ fontSize: '18px', fontWeight: 'bold', margin: '0 0 16px 0' }}>📋 ประวัติการออกรางวัลหวยลาว (ปี 2569 เป็นต้นไป)</h3>
-            <div style={{ overflowX: 'auto', maxHeight: '480px' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px' }}>
-                <thead style={{ position: 'sticky', top: 0, backgroundColor: '#030712', color: '#9ca3af' }}>
+          <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '18px', padding: '28px' }}>
+            <h3 style={{ fontSize: '20px', fontWeight: '600', margin: '0 0 20px 0', color: '#f8fafc' }}>📋 ประวัติการออกรางวัลหวยลาว (ปี 2569 เป็นต้นไป)</h3>
+            <div style={{ overflowX: 'auto', maxHeight: '520px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '15px' }}>
+                <thead style={{ position: 'sticky', top: 0, backgroundColor: '#0f172a', color: '#94a3b8' }}>
                   <tr>
-                    <th style={{ padding: '12px' }}>งวดวันที่</th>
-                    <th style={{ padding: '12px' }}>วัน</th>
-                    <th style={{ padding: '12px' }}>เลขรางวัล 4 หลัก</th>
-                    <th style={{ padding: '12px' }}>🟢 เลขล่าง (2 ตัวหน้า)</th>
-                    <th style={{ padding: '12px' }}>🔵 เลขบน (2 ตัวท้าย)</th>
+                    <th style={{ padding: '14px' }}>งวดวันที่</th>
+                    <th style={{ padding: '14px' }}>วัน</th>
+                    <th style={{ padding: '14px' }}>เลขรางวัล 4 หลัก</th>
+                    <th style={{ padding: '14px' }}>🟢 เลขล่าง (2 ตัวหน้า)</th>
+                    <th style={{ padding: '14px' }}>🔵 เลขบน (2 ตัวท้าย)</th>
                   </tr>
                 </thead>
                 <tbody>
                   {[...rawDraws].reverse().map((r, idx) => (
-                    <tr key={idx} style={{ borderBottom: '1px solid #1f293d' }}>
-                      <td style={{ padding: '12px', fontWeight: 'bold' }}>
+                    <tr key={idx} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                      <td style={{ padding: '14px', fontWeight: '600', color: '#f8fafc' }}>
                         {new Date(r.draw_date).toLocaleDateString('th-TH')}
                       </td>
-                      <td style={{ padding: '12px', color: '#9ca3af' }}>{r.day_of_week}</td>
-                      <td style={{ padding: '12px', color: '#f59e0b', fontWeight: 'bold' }}>{r.number_4digit}</td>
-                      <td style={{ padding: '12px', color: '#34d399', fontWeight: 'bold' }}>{r.head_2digit}</td>
-                      <td style={{ padding: '12px', color: '#818cf8', fontWeight: 'bold' }}>{r.tail_2digit}</td>
+                      <td style={{ padding: '14px', color: '#cbd5e1', fontWeight: '500' }}>{getThaiDayOfWeek(r.draw_date)}</td>
+                      <td style={{ padding: '14px' }}>
+                        <span style={{ backgroundColor: 'rgba(245, 158, 11, 0.15)', border: '1px solid rgba(245, 158, 11, 0.3)', color: '#f59e0b', fontWeight: '700', padding: '4px 10px', borderRadius: '6px' }}>
+                          {r.number_4digit}
+                        </span>
+                      </td>
+                      <td style={{ padding: '14px' }}>
+                        <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.3)', color: '#34d399', fontWeight: '700', padding: '4px 10px', borderRadius: '6px' }}>
+                          {r.head_2digit}
+                        </span>
+                      </td>
+                      <td style={{ padding: '14px' }}>
+                        <span style={{ backgroundColor: 'rgba(99, 102, 241, 0.15)', border: '1px solid rgba(99, 102, 241, 0.3)', color: '#818cf8', fontWeight: '700', padding: '4px 10px', borderRadius: '6px' }}>
+                          {r.tail_2digit}
+                        </span>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
