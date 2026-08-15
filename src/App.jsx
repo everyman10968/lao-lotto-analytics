@@ -396,16 +396,16 @@ export default function App() {
   const currentBacktestResult = computePredictionBacktest(predictiveAlgo, predictiveTarget);
 
   return (
-    <div style={{ backgroundColor: '#0b0f19', color: '#f3f4f6', minHeight: '100vh', padding: '24px', fontFamily: "'Kanit', sans-serif" }}>
+    <div className="app-container" style={{ backgroundColor: '#0b0f19', color: '#f3f4f6', minHeight: '100vh', padding: '24px', fontFamily: "'Kanit', sans-serif" }}>
       <div style={{ maxWidth: '1240px', margin: '0 auto' }}>
 
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', paddingBottom: '20px', marginBottom: '28px', flexWrap: 'wrap', gap: '16px' }}>
           <div>
-            <h1 style={{ fontSize: '26px', fontWeight: '700', background: 'linear-gradient(135deg, #fbbf24 0%, #f472b6 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <h1 className="header-title" style={{ fontSize: '26px', fontWeight: '700', background: 'linear-gradient(135deg, #fbbf24 0%, #f472b6 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
               🇱🇦 ระบบสถิติหวยลาว 4 หลัก (Lao Lotto Analytics)
             </h1>
-            <p style={{ fontSize: '14px', color: '#94a3b8', marginTop: '6px', fontWeight: '400' }}>
+            <p className="header-subtitle" style={{ fontSize: '14px', color: '#94a3b8', marginTop: '6px', fontWeight: '400' }}>
               วิเคราะห์ผลรางวัลสถิติหวยลาว • เพิ่มเป็นออก 5 วัน/สัปดาห์ (จันทร์ - ศุกร์) ตั้งแต่วันที่ 2 เมษายน 2569 เป็นต้นมา
             </p>
           </div>
@@ -420,13 +420,13 @@ export default function App() {
         </div>
 
         {/* Highlight Cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '20px', marginBottom: '28px' }}>
+        <div className="stat-card-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', marginBottom: '28px' }}>
           <div style={{ background: 'linear-gradient(135deg, #1e1b4b 0%, #311b92 100%)', border: '1px solid #6366f1', borderRadius: '18px', padding: '22px', boxShadow: '0 10px 25px -5px rgba(99, 102, 241, 0.2)' }}>
-            <span style={{ fontSize: '13px', color: '#c7d2fe', fontWeight: '500' }}>ผลหวยลาวงวดล่าสุด (4 หลัก)</span>
-            <div style={{ display: 'flex', gap: '10px', margin: '14px 0' }}>
+            <span className="stat-card-title" style={{ fontSize: '13px', color: '#c7d2fe', fontWeight: '500' }}>ผลหวยลาวงวดล่าสุด (4 หลัก)</span>
+            <div style={{ display: 'flex', gap: '8px', margin: '14px 0' }}>
               {latestDraw ? (
                 latestDraw.number_4digit.padStart(4, '0').split('').map((d, i) => (
-                  <span key={i} style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'linear-gradient(135deg, #f59e0b, #d97706)', color: '#000', fontWeight: '700', fontSize: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(245, 158, 11, 0.4)' }}>
+                  <span key={i} className="circle-badge" style={{ width: '42px', height: '42px', borderRadius: '50%', background: 'linear-gradient(135deg, #f59e0b, #d97706)', color: '#000', fontWeight: '700', fontSize: '19px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(245, 158, 11, 0.4)' }}>
                     {d}
                   </span>
                 ))
@@ -434,36 +434,36 @@ export default function App() {
                 <span style={{ color: '#64748b' }}>กำลังโหลด...</span>
               )}
             </div>
-            <span style={{ fontSize: '13px', color: '#34d399', fontWeight: '500' }}>
+            <span style={{ fontSize: '12px', color: '#34d399', fontWeight: '500' }}>
               {latestDraw ? `ออกเมื่อวัน${getThaiDayOfWeek(latestDraw.draw_date)}ที่ ${new Date(latestDraw.draw_date).toLocaleDateString('th-TH')}` : ''}
             </span>
           </div>
 
           <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '18px', padding: '22px' }}>
-            <span style={{ fontSize: '13px', color: '#94a3b8', fontWeight: '500' }}>จำนวนงวดที่จัดเก็บ (ปี 2569)</span>
-            <div style={{ fontSize: '32px', fontWeight: '700', margin: '8px 0', color: '#f8fafc' }}>{rawDraws.length} งวด</div>
-            <span style={{ fontSize: '13px', color: '#34d399' }}>ข้อมูลอัปเดตแบบ Realtime</span>
+            <span className="stat-card-title" style={{ fontSize: '13px', color: '#94a3b8', fontWeight: '500' }}>จำนวนงวดที่จัดเก็บ (ปี 2569)</span>
+            <div className="stat-card-value" style={{ fontSize: '32px', fontWeight: '700', margin: '8px 0', color: '#f8fafc' }}>{rawDraws.length} งวด</div>
+            <span style={{ fontSize: '12px', color: '#34d399' }}>ข้อมูลอัปเดตแบบ Realtime</span>
           </div>
 
           <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '18px', padding: '22px' }}>
-            <span style={{ fontSize: '13px', color: '#94a3b8', fontWeight: '500' }}>อัตราถูกรางวัลสะสม (เลขบน)</span>
-            <div style={{ fontSize: '32px', fontWeight: '700', color: '#f59e0b', margin: '8px 0' }}>{top50Stats ? `${top50Stats.hitRate}%` : '-'}</div>
-            <span style={{ fontSize: '13px', color: '#34d399' }}>คุมผิดไม่เกิน 2 งวด</span>
+            <span className="stat-card-title" style={{ fontSize: '13px', color: '#94a3b8', fontWeight: '500' }}>อัตราถูกรางวัลสะสม (เลขบน)</span>
+            <div className="stat-card-value" style={{ fontSize: '32px', fontWeight: '700', color: '#f59e0b', margin: '8px 0' }}>{top50Stats ? `${top50Stats.hitRate}%` : '-'}</div>
+            <span style={{ fontSize: '12px', color: '#34d399' }}>คุมผิดไม่เกิน 2 งวด</span>
           </div>
 
           <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '18px', padding: '22px' }}>
-            <span style={{ fontSize: '13px', color: '#94a3b8', fontWeight: '500' }}>ผิดติดต่อกันนานที่สุด</span>
-            <div style={{ fontSize: '32px', fontWeight: '700', color: top50Stats && top50Stats.maxStreak <= 2 ? '#34d399' : '#f87171', margin: '8px 0' }}>
+            <span className="stat-card-title" style={{ fontSize: '13px', color: '#94a3b8', fontWeight: '500' }}>ผิดติดต่อกันนานที่สุด</span>
+            <div className="stat-card-value" style={{ fontSize: '32px', fontWeight: '700', color: top50Stats && top50Stats.maxStreak <= 2 ? '#34d399' : '#f87171', margin: '8px 0' }}>
               {top50Stats ? `${top50Stats.maxStreak} งวด` : '-'}
             </div>
-            <span style={{ fontSize: '13px', color: top50Stats && top50Stats.maxStreak <= 2 ? '#34d399' : '#f59e0b' }}>
+            <span style={{ fontSize: '12px', color: top50Stats && top50Stats.maxStreak <= 2 ? '#34d399' : '#f59e0b' }}>
               {top50Stats && top50Stats.maxStreak <= 2 ? 'คุมสถิติผิดไม่เกิน 2 งวด' : `สูงสุด ${top50Stats?.maxStreak} งวด`}
             </span>
           </div>
         </div>
 
         {/* Navigation Tabs */}
-        <div style={{ display: 'flex', gap: '10px', borderBottom: '2px solid #1e293b', paddingBottom: '10px', marginBottom: '24px', overflowX: 'auto' }}>
+        <div style={{ display: 'flex', gap: '8px', borderBottom: '2px solid #1e293b', paddingBottom: '10px', marginBottom: '24px', overflowX: 'auto' }}>
           {[
             { id: 'top50', label: '🎯 วิเคราะห์ชุดเลข 50 ตัว' },
             { id: 'predictive', label: '🔮 วิเคราะห์โอกาสเลขเด็ด (Predictive)' },
@@ -474,14 +474,15 @@ export default function App() {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
+              className="nav-tab-btn"
               style={{
-                padding: '10px 20px',
+                padding: '10px 18px',
                 borderRadius: '10px',
                 border: 'none',
                 backgroundColor: activeTab === tab.id ? '#6366f1' : 'transparent',
                 color: activeTab === tab.id ? '#fff' : '#94a3b8',
                 fontWeight: '500',
-                fontSize: '15px',
+                fontSize: '14px',
                 cursor: 'pointer',
                 transition: 'all 0.2s',
                 whiteSpace: 'nowrap'
