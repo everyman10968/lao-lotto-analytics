@@ -140,8 +140,6 @@ export default function App() {
     };
   };
 
-  const top50Stats = computeTop50Stats(top50Mode);
-
   // Compute 2D Frequency Table by Selected Day
   const compute2DTable = () => {
     if (!rawDraws.length) return { list: [], total: 0 };
