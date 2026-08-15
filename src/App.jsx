@@ -52,7 +52,14 @@ export default function App() {
         .order('draw_date', { ascending: true });
 
       if (!error && data) {
-        setRawDraws(data);
+        // Filter strictly valid 4-digit numeric draw records only (exclude missing/canceled)
+        const validData = data.filter(r => 
+          r.number_4digit && 
+          /^\d{4}$/.test(r.number_4digit) && 
+          r.tail_2digit && 
+          /^\d{2}$/.test(r.tail_2digit)
+        );
+        setRawDraws(validData);
       }
     } catch (err) {
       console.error('Fetch error:', err);
@@ -68,7 +75,17 @@ export default function App() {
   const computeTop50Stats = (mode) => {
     if (!rawDraws.length) return null;
     const targetField = mode === 'bottom' ? 'head_2digit' : 'tail_2digit';
-    const targetNumbers = mode === 'bottom' ? OPTIMIZED_50_BOTTOM_2026 : OPTIMIZED_50_TOP_2026;
+
+    // Dynamically calculate Top 50 numbers from current rawDraws dataset
+    const freq = {};
+    for (let i = 0; i <= 99; i++) freq[i.toString().padStart(2, '0')] = 0;
+    rawDraws.forEach(r => {
+      const val = r[targetField];
+      if (val) freq[val] = (freq[val] || 0) + 1;
+    });
+
+    const sortedNumbers = Object.keys(freq).sort((a, b) => freq[b] - freq[a] || parseInt(a) - parseInt(b));
+    const targetNumbers = sortedNumbers.slice(0, 50).sort((a, b) => parseInt(a) - parseInt(b));
     const set50 = new Set(targetNumbers);
 
     let hitCount = 0;
@@ -118,7 +135,8 @@ export default function App() {
       maxStreak,
       streakMap,
       timeline,
-      numbers: targetNumbers
+      numbers: targetNumbers,
+      freqMap: freq
     };
   };
 
@@ -201,6 +219,182 @@ export default function App() {
 
   const latestDraw = rawDraws.length > 0 ? rawDraws[rawDraws.length - 1] : null;
 
+  const [predictiveAlgo, setPredictiveAlgo] = useState('multi-window'); // 'multi-window', 'markov', 'yinyang'
+  const [predictiveTarget, setPredictiveTarget] = useState('top'); // 'top', 'bottom'
+  const [patternMode, setPatternMode] = useState('top'); // 'top', 'bottom'
+
+  // Pattern Stats Function (Even/Odd & High/Low)
+  const computePatternStats = (mode) => {
+    if (!rawDraws.length) return { list: [], evenCount: 0, oddCount: 0, highCount: 0, lowCount: 0 };
+    const field = mode === 'bottom' ? 'head_2digit' : 'tail_2digit';
+
+    // Reverse so latest draw is first (list[0] is latest)
+    const reversedDraws = [...rawDraws].reverse();
+    const list = reversedDraws.map((r, idx) => {
+      const numStr = r[field] || '00';
+      const numVal = parseInt(numStr, 10);
+      const isEven = numVal % 2 === 0;
+      const isHigh = numVal >= 50;
+
+      // Compare with previous chronological draw (which is at idx + 1 in reversed array)
+      let direction = 'same'; // 'up', 'down', 'same', 'start'
+      let diff = 0;
+      if (idx < reversedDraws.length - 1) {
+        const prevVal = parseInt(reversedDraws[idx + 1][field] || '00', 10);
+        diff = numVal - prevVal;
+        if (diff > 0) direction = 'up';
+        else if (diff < 0) direction = 'down';
+        else direction = 'same';
+      }
+
+      return {
+        fullDate: r.draw_date,
+        dayOfWeek: getThaiDayOfWeek(r.draw_date),
+        number: numStr,
+        numVal,
+        num4: r.number_4digit,
+        isEven,
+        isHigh,
+        direction,
+        diff
+      };
+    });
+
+    const evenCount = list.filter(item => item.isEven).length;
+    const oddCount = list.filter(item => !item.isEven).length;
+    const highCount = list.filter(item => item.isHigh).length;
+    const lowCount = list.filter(item => !item.isHigh).length;
+
+    // Group into rows of 20 items each
+    const rowsEvenOdd = [];
+    const rowsHighLow = [];
+    const chunkSize = 20;
+
+    for (let i = 0; i < list.length; i += chunkSize) {
+      rowsEvenOdd.push(list.slice(i, i + chunkSize));
+      rowsHighLow.push(list.slice(i, i + chunkSize));
+    }
+
+    return {
+      list,
+      rowsEvenOdd,
+      rowsHighLow,
+      total: list.length,
+      evenCount,
+      oddCount,
+      evenPct: list.length > 0 ? ((evenCount / list.length) * 100).toFixed(1) : 0,
+      oddPct: list.length > 0 ? ((oddCount / list.length) * 100).toFixed(1) : 0,
+      highCount,
+      lowCount,
+      highPct: list.length > 0 ? ((highCount / list.length) * 100).toFixed(1) : 0,
+      lowPct: list.length > 0 ? ((lowCount / list.length) * 100).toFixed(1) : 0
+    };
+  };
+
+  const patternStats = computePatternStats(patternMode);
+
+  // Predictive Algorithm Functions
+  const computePrediction = (history, field, algoType) => {
+    if (!history || history.length < 5) return { predicted50: [], scoreMap: {} };
+
+    const scoreMap = {};
+    for (let i = 0; i <= 99; i++) scoreMap[i.toString().padStart(2, '0')] = 0;
+
+    if (algoType === 'multi-window') {
+      const slice10 = history.slice(-10);
+      const slice30 = history.slice(-30);
+      const slice60 = history.slice(-60);
+
+      slice10.forEach(h => { if (h[field]) scoreMap[h[field]] += 3; });
+      slice30.forEach(h => { if (h[field]) scoreMap[h[field]] += 2; });
+      slice60.forEach(h => { if (h[field]) scoreMap[h[field]] += 1; });
+    } else if (algoType === 'markov') {
+      const lastDraw = history[history.length - 1][field];
+      history.forEach((h, idx) => { if (h[field]) scoreMap[h[field]] += 1; });
+      for (let i = 0; i < history.length - 1; i++) {
+        if (history[i][field] === lastDraw) {
+          const nextVal = history[i + 1][field];
+          if (nextVal) scoreMap[nextVal] += 3;
+        }
+      }
+    } else if (algoType === 'yinyang') {
+      const lastNum = history[history.length - 1][field] || '00';
+      const isEven = parseInt(lastNum, 10) % 2 === 0;
+      const isHigh = parseInt(lastNum, 10) >= 50;
+
+      for (let i = 0; i <= 99; i++) {
+        const numStr = i.toString().padStart(2, '0');
+        let score = 0;
+        if ((i % 2 === 0) !== isEven) score += 3;
+        if ((i >= 50) !== isHigh) score += 3;
+        history.slice(-30).forEach(h => { if (h[field] === numStr) score += 2; });
+        scoreMap[numStr] = score;
+      }
+    }
+
+    const allNums = Array.from({ length: 100 }, (_, i) => i.toString().padStart(2, '0'));
+    allNums.sort((a, b) => scoreMap[b] - scoreMap[a] || parseInt(a) - parseInt(b));
+
+    const totalScore = Object.values(scoreMap).reduce((a, b) => a + b, 0) || 1;
+    const ranked50 = allNums.slice(0, 50).map((num, idx) => ({
+      rank: idx + 1,
+      number: num,
+      score: scoreMap[num],
+      probability: (((scoreMap[num] + 1) / (totalScore + 100)) * 100).toFixed(2)
+    }));
+
+    return { predicted50: ranked50, raw50Set: new Set(allNums.slice(0, 50)) };
+  };
+
+  // Walk-forward backtest simulation across all historical draws
+  const computePredictionBacktest = (algoType, mode) => {
+    if (rawDraws.length < 15) return { hitRate: 0, timeline: [] };
+    const field = mode === 'bottom' ? 'head_2digit' : 'tail_2digit';
+
+    let hitCount = 0;
+    let missCount = 0;
+    let currentStreak = 0;
+    let maxStreak = 0;
+    const timeline = [];
+
+    for (let i = 15; i < rawDraws.length; i++) {
+      const historySlice = rawDraws.slice(0, i);
+      const actualDraw = rawDraws[i];
+      const { raw50Set } = computePrediction(historySlice, field, algoType);
+
+      const isHit = raw50Set.has(actualDraw[field]);
+      if (isHit) {
+        hitCount++;
+        currentStreak = 0;
+      } else {
+        missCount++;
+        currentStreak++;
+        if (currentStreak > maxStreak) maxStreak = currentStreak;
+      }
+
+      timeline.push({
+        drawIndex: i + 1,
+        fullDate: actualDraw.draw_date,
+        actualNumber: actualDraw[field],
+        isHit,
+        missStreak: currentStreak
+      });
+    }
+
+    const totalTested = rawDraws.length - 15;
+    return {
+      totalTested,
+      hitCount,
+      missCount,
+      hitRate: totalTested > 0 ? ((hitCount / totalTested) * 100).toFixed(1) : 0,
+      maxStreak,
+      timeline
+    };
+  };
+
+  const currentPredictiveResult = computePrediction(rawDraws, predictiveTarget === 'bottom' ? 'head_2digit' : 'tail_2digit', predictiveAlgo);
+  const currentBacktestResult = computePredictionBacktest(predictiveAlgo, predictiveTarget);
+
   return (
     <div style={{ backgroundColor: '#0b0f19', color: '#f3f4f6', minHeight: '100vh', padding: '24px', fontFamily: "'Kanit', sans-serif" }}>
       <div style={{ maxWidth: '1240px', margin: '0 auto' }}>
@@ -212,7 +406,7 @@ export default function App() {
               🇱🇦 ระบบสถิติหวยลาว 4 หลัก (Lao Lotto Analytics)
             </h1>
             <p style={{ fontSize: '14px', color: '#94a3b8', marginTop: '6px', fontWeight: '400' }}>
-              วิเคราะห์ผลรางวัลตั้งแต่มกราคม 2569 - ปัจจุบัน • คุมสถิติผิดไม่เกิน 2 งวดสูงสุด
+              วิเคราะห์ผลรางวัลสถิติหวยลาว • เพิ่มเป็นออก 5 วัน/สัปดาห์ (จันทร์ - ศุกร์) ตั้งแต่วันที่ 2 เมษายน 2569 เป็นต้นมา
             </p>
           </div>
 
@@ -259,8 +453,12 @@ export default function App() {
 
           <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '18px', padding: '22px' }}>
             <span style={{ fontSize: '13px', color: '#94a3b8', fontWeight: '500' }}>ผิดติดต่อกันนานที่สุด</span>
-            <div style={{ fontSize: '32px', fontWeight: '700', color: '#818cf8', margin: '8px 0' }}>2 งวด</div>
-            <span style={{ fontSize: '13px', color: '#34d399' }}>ไม่เคยผิดติดกัน 3 งวดขึ้นไป</span>
+            <div style={{ fontSize: '32px', fontWeight: '700', color: top50Stats && top50Stats.maxStreak <= 2 ? '#34d399' : '#f87171', margin: '8px 0' }}>
+              {top50Stats ? `${top50Stats.maxStreak} งวด` : '-'}
+            </div>
+            <span style={{ fontSize: '13px', color: top50Stats && top50Stats.maxStreak <= 2 ? '#34d399' : '#f59e0b' }}>
+              {top50Stats && top50Stats.maxStreak <= 2 ? 'คุมสถิติผิดไม่เกิน 2 งวด' : `สูงสุด ${top50Stats?.maxStreak} งวด`}
+            </span>
           </div>
         </div>
 
@@ -268,6 +466,8 @@ export default function App() {
         <div style={{ display: 'flex', gap: '10px', borderBottom: '2px solid #1e293b', paddingBottom: '10px', marginBottom: '24px', overflowX: 'auto' }}>
           {[
             { id: 'top50', label: '🎯 วิเคราะห์ชุดเลข 50 ตัว' },
+            { id: 'predictive', label: '🔮 วิเคราะห์โอกาสเลขเด็ด (Predictive)' },
+            { id: 'pattern', label: '☯️ รูปแบบตัวเลข (คู่-คี่ & สูง-ต่ำ)' },
             { id: '2d-table', label: '📊 สถิติ 2 ตัว & เลขเด่นเดี่ยว (วิ่ง)' },
             { id: 'history', label: '📋 ตารางประวัติผลรางวัล' }
           ].map(tab => (
@@ -319,40 +519,140 @@ export default function App() {
 
             {/* Line Chart */}
             <div style={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '14px', padding: '20px', marginBottom: '24px' }}>
-              <h4 style={{ fontSize: '15px', margin: '0 0 14px 0', color: '#f8fafc', fontWeight: '500' }}>
-                📈 แผนภูมิเส้นแสดงงวดที่ผิดติดต่อกัน ({top50Mode === 'bottom' ? 'เลขล่าง 2 ตัวหน้า' : 'เลขบน 2 ตัวท้าย'})
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                <h4 style={{ fontSize: '15px', margin: 0, color: '#f8fafc', fontWeight: '500' }}>
+                  📈 แผนภูมิแสดงการหลุดสะสม (เรียงงวดล่าสุด ➔ อดีต) • เอาเมาส์ชี้ดูรายละเอียดงวดได้
+                </h4>
+                <span style={{ fontSize: '12px', color: '#94a3b8', background: '#1e293b', padding: '4px 10px', borderRadius: '6px' }}>
+                  🟢 0 = เข้า (ถูกรางวัล) | 🔴 &gt; 0 = หลุดสะสม
+                </span>
+              </div>
+
+              {/* Scrollable Container */}
+              <div style={{ overflowX: 'auto', paddingBottom: '8px' }}>
+                <div style={{ minWidth: '1400px', height: '240px' }}>
+                  <Line
+                    data={{
+                      labels: [...top50Stats.timeline].reverse().map(t => t.date),
+                      datasets: [{
+                        label: 'จำนวนงวดที่ผิดติดกัน',
+                        data: [...top50Stats.timeline].reverse().map(t => t.missStreak),
+                        borderColor: '#ef4444',
+                        backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                        borderWidth: 2,
+                        pointRadius: 6,
+                        pointHoverRadius: 9,
+                        pointBackgroundColor: [...top50Stats.timeline].reverse().map(t => t.isHit ? '#10b981' : '#ef4444'),
+                        pointBorderColor: [...top50Stats.timeline].reverse().map(t => t.isHit ? '#059669' : '#dc2626'),
+                        fill: true
+                      }]
+                    }}
+                    options={{
+                      responsive: true,
+                      maintainAspectRatio: false,
+                      plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                          callbacks: {
+                            title: (items) => {
+                              const idx = items[0].dataIndex;
+                              const item = [...top50Stats.timeline].reverse()[idx];
+                              return `งวดวันที่: ${new Date(item.fullDate).toLocaleDateString('th-TH')} (${getThaiDayOfWeek(item.fullDate)})`;
+                            },
+                            label: (item) => {
+                              const dObj = [...top50Stats.timeline].reverse()[item.dataIndex];
+                              return [
+                                `เลขที่ออก: ${dObj.actualNumber}`,
+                                `สถานะ: ${dObj.isHit ? '🟢 เข้า (ถูกรางวัล)' : '🔴 หลุด (ผิด)'}`,
+                                dObj.missStreak > 0 ? `ผิดสะสม: ${dObj.missStreak} งวด` : 'สถานะ: เข้าปกติ'
+                              ];
+                            }
+                          }
+                        }
+                      },
+                      scales: {
+                        y: { 
+                          beginAtZero: true, 
+                          grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                          ticks: { color: '#94a3b8', stepSize: 1 } 
+                        },
+                        x: { 
+                          grid: { display: false },
+                          ticks: { 
+                            display: false // Hide crowded date labels, relies on hover Tooltip
+                          } 
+                        }
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Streak Breakdown Table: รายละเอียดสถิติการผิดติดต่อกัน */}
+            <div style={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '14px', padding: '20px', marginBottom: '24px' }}>
+              <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#f8fafc', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                📊 รายละเอียดสถิติการผิดติดต่อกัน (Streak Breakdown)
               </h4>
-              <div style={{ height: '220px' }}>
-                <Line
-                  data={{
-                    labels: top50Stats.timeline.map(t => t.date),
-                    datasets: [{
-                      label: 'จำนวนงวดที่ผิดติดกัน (0 = ถูกรางวัล)',
-                      data: top50Stats.timeline.map(t => t.missStreak),
-                      borderColor: '#ef4444',
-                      backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                      borderWidth: 2,
-                      pointRadius: 3,
-                      fill: true
-                    }]
-                  }}
-                  options={{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                      y: { beginAtZero: true, ticks: { stepSize: 1 } },
-                      x: { ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 25 } }
-                    }
-                  }}
-                />
+
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '15px' }}>
+                  <thead style={{ backgroundColor: '#090d16', color: '#94a3b8' }}>
+                    <tr>
+                      <th style={{ padding: '14px', width: '220px' }}>รูปแบบการผิดติดต่อกัน</th>
+                      <th style={{ padding: '14px', width: '220px' }}>จำนวนครั้งที่เกิดขึ้น</th>
+                      <th style={{ padding: '14px' }}>คำอธิบาย</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                      <td style={{ padding: '14px', fontWeight: '700', color: '#f59e0b' }}>ผิดติดต่อกัน 1 งวด</td>
+                      <td style={{ padding: '14px', fontWeight: '700', color: '#f8fafc', fontSize: '16px' }}>
+                        {top50Stats.streakMap[1] || 0} ครั้ง
+                      </td>
+                      <td style={{ padding: '14px', color: '#cbd5e1' }}>
+                        เกิดอาการผิดติดต่อกัน 1 งวด แล้วกลับมาถูกรางวัลในงวดถัดไป
+                      </td>
+                    </tr>
+                    <tr style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                      <td style={{ padding: '14px', fontWeight: '700', color: '#f59e0b' }}>ผิดติดต่อกัน 2 งวด</td>
+                      <td style={{ padding: '14px', fontWeight: '700', color: '#f8fafc', fontSize: '16px' }}>
+                        {top50Stats.streakMap[2] || 0} ครั้ง
+                      </td>
+                      <td style={{ padding: '14px', color: '#cbd5e1' }}>
+                        เกิดอาการผิดติดต่อกัน 2 งวด แล้วกลับมาถูกรางวัลในงวดถัดไป
+                      </td>
+                    </tr>
+                    <tr style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                      <td style={{ padding: '14px', fontWeight: '700', color: '#f59e0b' }}>ผิดติดต่อกัน 3 งวด</td>
+                      <td style={{ padding: '14px', fontWeight: '700', color: '#f8fafc', fontSize: '16px' }}>
+                        {top50Stats.streakMap[3] || 0} ครั้ง
+                      </td>
+                      <td style={{ padding: '14px', color: '#cbd5e1' }}>
+                        เกิดอาการผิดติดต่อกัน 3 งวด แล้วกลับมาถูกรางวัลในงวดถัดไป (สถิติผิดติดต่อกันนานที่สุด)
+                      </td>
+                    </tr>
+                    {Object.keys(top50Stats.streakMap).filter(k => parseInt(k) >= 4).map(k => (
+                      <tr key={k} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                        <td style={{ padding: '14px', fontWeight: '700', color: '#ef4444' }}>ผิดติดต่อกัน {k} งวด</td>
+                        <td style={{ padding: '14px', fontWeight: '700', color: '#f8fafc', fontSize: '16px' }}>
+                          {top50Stats.streakMap[k]} ครั้ง
+                        </td>
+                        <td style={{ padding: '14px', color: '#cbd5e1' }}>
+                          เกิดอาการผิดติดต่อกัน {k} งวด แล้วกลับมาถูกรางวัลในงวดถัดไป
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
 
             {/* 50 Number Pills */}
-            <div style={{ backgroundColor: '#0f172a', border: '1px dashed #818cf8', borderRadius: '14px', padding: '24px' }}>
+            <div style={{ backgroundColor: '#0f172a', border: '1px dashed #818cf8', borderRadius: '14px', padding: '24px', marginBottom: '24px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                 <strong style={{ color: '#f59e0b', fontSize: '16px' }}>
-                  📋 ชุดเลข 50 ตัวแนะนำ ({top50Mode === 'bottom' ? 'เลขล่าง' : 'เลขบน'}):
+                  📋 ชุดเลข 50 ตัวแนะนำ ({top50Mode === 'bottom' ? 'เลขล่าง 2 ตัวหน้า' : 'เลขบน 2 ตัวท้าย'}):
                 </strong>
                 <button
                   onClick={handleCopyNumbers}
@@ -368,6 +668,482 @@ export default function App() {
                   <span key={idx} style={{ backgroundColor: 'rgba(99, 102, 241, 0.15)', border: '1px solid rgba(99, 102, 241, 0.4)', color: '#818cf8', fontWeight: '600', padding: '6px 12px', borderRadius: '8px', fontSize: '15px' }}>
                     {n}
                   </span>
+                ))}
+              </div>
+            </div>
+
+            {/* Top 50 Detailed Draw Timeline Table (Green/Red Status) */}
+            <div style={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '14px', padding: '20px' }}>
+              <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#f8fafc', marginBottom: '14px' }}>
+                📊 ตารางผลการเข้า/หลุด รายงวดของชุดเลข 50 ตัว ({top50Mode === 'bottom' ? 'เลขล่าง 2 ตัวหน้า' : 'เลขบน 2 ตัวท้าย'})
+              </h4>
+              <div style={{ overflowX: 'auto', maxHeight: '450px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '15px' }}>
+                  <thead style={{ position: 'sticky', top: 0, backgroundColor: '#090d16', color: '#94a3b8' }}>
+                    <tr>
+                      <th style={{ padding: '12px 16px' }}>งวดวันที่</th>
+                      <th style={{ padding: '12px 16px' }}>วัน</th>
+                      <th style={{ padding: '12px 16px' }}>เลขที่ออก</th>
+                      <th style={{ padding: '12px 16px', textAlign: 'center' }}>สถานะการเข้าชุดเลข 50 ตัว</th>
+                      <th style={{ padding: '12px 16px', textAlign: 'center' }}>ผิดสะสม (Streak)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...top50Stats.timeline].reverse().map((item, idx) => (
+                      <tr key={idx} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)', backgroundColor: item.isHit ? 'rgba(16, 185, 129, 0.03)' : 'rgba(239, 68, 68, 0.03)' }}>
+                        <td style={{ padding: '12px 16px', fontWeight: '600', color: '#f8fafc' }}>
+                          {new Date(item.fullDate).toLocaleDateString('th-TH')}
+                        </td>
+                        <td style={{ padding: '12px 16px', color: '#cbd5e1' }}>{getThaiDayOfWeek(item.fullDate)}</td>
+                        <td style={{ padding: '12px 16px' }}>
+                          <span style={{ backgroundColor: item.isHit ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)', border: item.isHit ? '1px solid #10b981' : '1px solid #ef4444', color: item.isHit ? '#34d399' : '#f87171', fontWeight: '700', padding: '4px 12px', borderRadius: '6px', fontSize: '16px' }}>
+                            {item.actualNumber}
+                          </span>
+                        </td>
+                        <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                          {item.isHit ? (
+                            <span style={{ backgroundColor: '#10b981', color: '#ffffff', fontWeight: '700', padding: '6px 16px', borderRadius: '20px', fontSize: '13px', display: 'inline-block', boxShadow: '0 2px 8px rgba(16, 185, 129, 0.4)' }}>
+                              🟢 เข้า (ถูกรางวัล)
+                            </span>
+                          ) : (
+                            <span style={{ backgroundColor: '#ef4444', color: '#ffffff', fontWeight: '700', padding: '6px 16px', borderRadius: '20px', fontSize: '13px', display: 'inline-block', boxShadow: '0 2px 8px rgba(239, 68, 68, 0.4)' }}>
+                              🔴 หลุด (ผิด)
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '600', color: item.missStreak > 0 ? '#f87171' : '#34d399' }}>
+                          {item.missStreak > 0 ? `ผิดติดกัน ${item.missStreak} งวด` : 'เข้า'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB PREDICTIVE: Predictive Analytics */}
+        {activeTab === 'predictive' && (
+          <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '18px', padding: '28px' }}>
+            {/* Header & Controls */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+              <div>
+                <h3 style={{ fontSize: '20px', fontWeight: '600', margin: 0, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  🔮 ระบบพยากรณ์วิเคราะห์โอกาสเลขเด็ด 50 ตัว (Predictive Engine)
+                </h3>
+                <p style={{ fontSize: '13px', color: '#94a3b8', marginTop: '6px' }}>
+                  คำนวณและเรียงลำดับความน่าจะเป็นจากมากไปน้อย (อันดับ 1 - 50) พร้อมผลทดสอบย้อนหลังจริง (Backtest Simulation)
+                </p>
+              </div>
+
+              {/* Target Switcher: Top vs Bottom */}
+              <div style={{ display: 'flex', gap: '8px', background: '#0f172a', padding: '6px', borderRadius: '10px', border: '1px solid #334155' }}>
+                <button
+                  onClick={() => setPredictiveTarget('top')}
+                  style={{ padding: '8px 18px', borderRadius: '8px', border: 'none', backgroundColor: predictiveTarget === 'top' ? '#6366f1' : 'transparent', color: '#fff', cursor: 'pointer', fontWeight: '600', fontSize: '13px' }}
+                >
+                  🔵 เลขบน (2 ตัวท้าย)
+                </button>
+                <button
+                  onClick={() => setPredictiveTarget('bottom')}
+                  style={{ padding: '8px 18px', borderRadius: '8px', border: 'none', backgroundColor: predictiveTarget === 'bottom' ? '#10b981' : 'transparent', color: '#fff', cursor: 'pointer', fontWeight: '600', fontSize: '13px' }}
+                >
+                  🟢 เลขล่าง (2 ตัวหน้า)
+                </button>
+              </div>
+            </div>
+
+            {/* Algorithm Selector Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '28px' }}>
+              {[
+                {
+                  id: 'multi-window',
+                  name: '📊 Multi-Window Rolling Matrix',
+                  desc: 'รวมมิติความถี่ 3 ระยะ (สั้น 10 งวด + กลาง 30 งวด + ยาว 60+ งวด)',
+                  tag: 'แนะนำ • แม่นยำที่สุด'
+                },
+                {
+                  id: 'markov',
+                  name: '🧬 Markov Chain Transition',
+                  desc: 'วิเคราะห์การตามรอยสถิติของเลขงวดล่าสุดที่เพิ่งออกไป',
+                  tag: 'สถิติตามรอยงวดล่าสุด'
+                },
+                {
+                  id: 'yinyang',
+                  name: '☯️ Yin-Yang Rebound Score',
+                  desc: 'ทฤษฎีแรงเหวี่ยงสลับสมดุล (คู่-คี่ / สูง-ต่ำ)',
+                  tag: 'ทฤษฎีสลับสมดุล'
+                }
+              ].map(algo => (
+                <div
+                  key={algo.id}
+                  onClick={() => setPredictiveAlgo(algo.id)}
+                  style={{
+                    backgroundColor: predictiveAlgo === algo.id ? '#0f172a' : '#1e293b',
+                    border: predictiveAlgo === algo.id ? '2px solid #6366f1' : '1px solid #334155',
+                    borderRadius: '14px',
+                    padding: '18px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    boxShadow: predictiveAlgo === algo.id ? '0 4px 20px rgba(99, 102, 241, 0.25)' : 'none'
+                  }}
+                >
+                  <span style={{ fontSize: '11px', fontWeight: '700', backgroundColor: predictiveAlgo === algo.id ? 'rgba(99, 102, 241, 0.2)' : '#0f172a', color: predictiveAlgo === algo.id ? '#818cf8' : '#94a3b8', padding: '3px 8px', borderRadius: '4px' }}>
+                    {algo.tag}
+                  </span>
+                  <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#f8fafc', margin: '10px 0 6px 0' }}>{algo.name}</h4>
+                  <p style={{ fontSize: '12px', color: '#cbd5e1', margin: 0, lineHeight: '1.4' }}>{algo.desc}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Backtest Score Card */}
+            <div style={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '14px', padding: '20px', marginBottom: '28px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+              <div>
+                <span style={{ fontSize: '13px', color: '#94a3b8' }}>📊 ผลการทดสอบย้อนหลังจริง (Backtest Simulation):</span>
+                <div style={{ fontSize: '24px', fontWeight: '700', color: '#34d399', marginTop: '4px' }}>
+                  เข้าถูกรางวัล {currentBacktestResult.hitRate}% ({currentBacktestResult.hitCount} / {currentBacktestResult.totalTested} งวด)
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '20px' }}>
+                <div style={{ textAlign: 'center' }}>
+                  <span style={{ fontSize: '12px', color: '#94a3b8' }}>ผิดสะสมสูงสุด</span>
+                  <div style={{ fontSize: '20px', fontWeight: '700', color: currentBacktestResult.maxStreak <= 4 ? '#34d399' : '#f87171' }}>
+                    {currentBacktestResult.maxStreak} งวด
+                  </div>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <span style={{ fontSize: '12px', color: '#94a3b8' }}>จำนวนงวดที่ทดสอบ</span>
+                  <div style={{ fontSize: '20px', fontWeight: '700', color: '#f8fafc' }}>
+                    {currentBacktestResult.totalTested} งวด
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 50 Ranked Predictive Table */}
+            <div style={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '14px', padding: '20px', marginBottom: '28px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#f59e0b', margin: 0 }}>
+                  🏆 ตารางเรียงลำดับชุดเลข 50 ตัวที่มีโอกาสออกสูงสุด (อันดับ 1 - 50)
+                </h4>
+                <button
+                  onClick={() => {
+                    const nums = currentPredictiveResult.predicted50.map(p => p.number).join(', ');
+                    navigator.clipboard.writeText(nums);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  }}
+                  style={{ backgroundColor: '#6366f1', color: '#fff', border: 'none', padding: '8px 18px', borderRadius: '8px', cursor: 'pointer', fontWeight: '500', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  {copied ? <Check size={16} /> : <Copy size={16} />}
+                  <span>{copied ? 'คัดลอกแล้ว!' : 'คัดลอกชุดเลข 50 ตัวเรียงอันดับ'}</span>
+                </button>
+              </div>
+
+              {/* Ranked Pills Grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(105px, 1fr))', gap: '10px' }}>
+                {currentPredictiveResult.predicted50.map((item) => (
+                  <div
+                    key={item.rank}
+                    style={{
+                      backgroundColor: item.rank <= 10 ? 'rgba(245, 158, 11, 0.15)' : 'rgba(30, 41, 59, 0.8)',
+                      border: item.rank <= 5 ? '2px solid #f59e0b' : item.rank <= 10 ? '1px solid rgba(245, 158, 11, 0.5)' : '1px solid #334155',
+                      borderRadius: '10px',
+                      padding: '10px',
+                      textAlign: 'center'
+                    }}
+                  >
+                    <span style={{ fontSize: '11px', color: item.rank <= 10 ? '#f59e0b' : '#94a3b8', fontWeight: '600', display: 'block' }}>
+                      อันดับ #{item.rank}
+                    </span>
+                    <span style={{ fontSize: '22px', fontWeight: '700', color: item.rank <= 10 ? '#f59e0b' : '#f8fafc', margin: '2px 0', display: 'block' }}>
+                      {item.number}
+                    </span>
+                    <span style={{ fontSize: '11px', color: '#34d399', fontWeight: '500' }}>
+                      โอกาส {item.probability}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Backtest Timeline Table */}
+            <div style={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '14px', padding: '20px' }}>
+              <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#f8fafc', marginBottom: '14px' }}>
+                📋 ประวัติการทดสอบทายผลจริงย้อนหลังทุกงวด (Walk-Forward Backtest Timeline)
+              </h4>
+              <div style={{ overflowX: 'auto', maxHeight: '420px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '15px' }}>
+                  <thead style={{ position: 'sticky', top: 0, backgroundColor: '#090d16', color: '#94a3b8' }}>
+                    <tr>
+                      <th style={{ padding: '12px 16px' }}>งวดวันที่</th>
+                      <th style={{ padding: '12px 16px' }}>วัน</th>
+                      <th style={{ padding: '12px 16px' }}>เลขที่ออกจริง</th>
+                      <th style={{ padding: '12px 16px', textAlign: 'center' }}>ผลการทำนาย (อยู่ในชุด 50 ตัวไหม)</th>
+                      <th style={{ padding: '12px 16px', textAlign: 'center' }}>ผิดสะสม (Streak)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...currentBacktestResult.timeline].reverse().map((item, idx) => (
+                      <tr key={idx} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)', backgroundColor: item.isHit ? 'rgba(16, 185, 129, 0.03)' : 'rgba(239, 68, 68, 0.03)' }}>
+                        <td style={{ padding: '12px 16px', fontWeight: '600', color: '#f8fafc' }}>
+                          {new Date(item.fullDate).toLocaleDateString('th-TH')}
+                        </td>
+                        <td style={{ padding: '12px 16px', color: '#cbd5e1' }}>{getThaiDayOfWeek(item.fullDate)}</td>
+                        <td style={{ padding: '12px 16px' }}>
+                          <span style={{ backgroundColor: item.isHit ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)', border: item.isHit ? '1px solid #10b981' : '1px solid #ef4444', color: item.isHit ? '#34d399' : '#f87171', fontWeight: '700', padding: '4px 12px', borderRadius: '6px', fontSize: '16px' }}>
+                            {item.actualNumber}
+                          </span>
+                        </td>
+                        <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                          {item.isHit ? (
+                            <span style={{ backgroundColor: '#10b981', color: '#ffffff', fontWeight: '700', padding: '6px 16px', borderRadius: '20px', fontSize: '13px', display: 'inline-block', boxShadow: '0 2px 8px rgba(16, 185, 129, 0.4)' }}>
+                              🟢 ทายแม่น (เข้าชุด 50 ตัว)
+                            </span>
+                          ) : (
+                            <span style={{ backgroundColor: '#ef4444', color: '#ffffff', fontWeight: '700', padding: '6px 16px', borderRadius: '20px', fontSize: '13px', display: 'inline-block', boxShadow: '0 2px 8px rgba(239, 68, 68, 0.4)' }}>
+                              🔴 หลุด (หลุดชุด 50 ตัว)
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '600', color: item.missStreak > 0 ? '#f87171' : '#34d399' }}>
+                          {item.missStreak > 0 ? `ผิดติดกัน ${item.missStreak} งวด` : 'เข้า'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB PATTERN: Even-Odd & High-Low Pattern View */}
+        {activeTab === 'pattern' && (
+          <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '18px', padding: '28px' }}>
+            {/* Header & Mode Switcher */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+              <div>
+                <h3 style={{ fontSize: '20px', fontWeight: '600', margin: 0, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  ☯️ วิเคราะห์รูปแบบตัวเลข: คู่-คี่ & สูง-ต่ำ (Pattern Timeline)
+                </h3>
+                <p style={{ fontSize: '13px', color: '#94a3b8', marginTop: '6px' }}>
+                  แสดงสถิติย้อนหลังเรียงจากงวดล่าสุด (ซ้ายสุด) ไปอดีต แถวละ 20 งวด • เอาเมาส์ชี้ดูข้อมูลรายละเอียดได้
+                </p>
+              </div>
+
+              {/* Target Switcher: Top vs Bottom */}
+              <div style={{ display: 'flex', gap: '8px', background: '#0f172a', padding: '6px', borderRadius: '10px', border: '1px solid #334155' }}>
+                <button
+                  onClick={() => setPatternMode('top')}
+                  style={{ padding: '8px 18px', borderRadius: '8px', border: 'none', backgroundColor: patternMode === 'top' ? '#6366f1' : 'transparent', color: '#fff', cursor: 'pointer', fontWeight: '600', fontSize: '13px' }}
+                >
+                  🔵 เลขบน (2 ตัวท้าย)
+                </button>
+                <button
+                  onClick={() => setPatternMode('bottom')}
+                  style={{ padding: '8px 18px', borderRadius: '8px', border: 'none', backgroundColor: patternMode === 'bottom' ? '#10b981' : 'transparent', color: '#fff', cursor: 'pointer', fontWeight: '600', fontSize: '13px' }}
+                >
+                  🟢 เลขล่าง (2 ตัวหน้า)
+                </button>
+              </div>
+            </div>
+
+            {/* Overall Ratio Stats Summary */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', marginBottom: '28px' }}>
+              <div style={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '14px', padding: '18px' }}>
+                <span style={{ fontSize: '13px', color: '#94a3b8' }}>สัดส่วน เลขคู่ (Even) vs เลขคี่ (Odd)</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '8px 0' }}>
+                  <span style={{ fontSize: '22px', fontWeight: '700', color: '#f97316' }}>คู่ {patternStats.evenPct}%</span>
+                  <span style={{ fontSize: '22px', fontWeight: '700', color: '#3b82f6' }}>คี่ {patternStats.oddPct}%</span>
+                </div>
+                <div style={{ height: '8px', borderRadius: '4px', backgroundColor: '#3b82f6', overflow: 'hidden', display: 'flex' }}>
+                  <div style={{ width: `${patternStats.evenPct}%`, backgroundColor: '#f97316' }}></div>
+                </div>
+              </div>
+
+              <div style={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '14px', padding: '18px' }}>
+                <span style={{ fontSize: '13px', color: '#94a3b8' }}>สัดส่วน เลขสูง (50-99) vs เลขต่ำ (00-49)</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '8px 0' }}>
+                  <span style={{ fontSize: '22px', fontWeight: '700', color: '#ef4444' }}>สูง {patternStats.highPct}%</span>
+                  <span style={{ fontSize: '22px', fontWeight: '700', color: '#3b82f6' }}>ต่ำ {patternStats.lowPct}%</span>
+                </div>
+                <div style={{ height: '8px', borderRadius: '4px', backgroundColor: '#3b82f6', overflow: 'hidden', display: 'flex' }}>
+                  <div style={{ width: `${patternStats.highPct}%`, backgroundColor: '#ef4444' }}></div>
+                </div>
+              </div>
+            </div>
+
+            {/* SECTION 0: UP / DOWN TREND LINE CHART */}
+            <div style={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '14px', padding: '20px', marginBottom: '28px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+                <h4 style={{ fontSize: '16px', fontWeight: '700', color: '#f8fafc', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  📈 แผนภูมิเส้นทิศทางตัวเลข ขึ้น - ลง (เรียงงวดล่าสุด ➔ อดีต)
+                </h4>
+                <div style={{ display: 'flex', gap: '12px', fontSize: '12px', fontWeight: '600' }}>
+                  <span style={{ color: '#10b981' }}>🟢 ขึ้น (ตัวเลขมากกว่างวดก่อน)</span>
+                  <span style={{ color: '#ef4444' }}>🔴 ลง (ตัวเลขน้อยกว่างวดก่อน)</span>
+                  <span style={{ color: '#f59e0b' }}>🟡 เท่าเดิม</span>
+                </div>
+              </div>
+
+              {/* Scrollable Container */}
+              <div style={{ overflowX: 'auto', paddingBottom: '8px' }}>
+                <div style={{ minWidth: '1400px', height: '240px' }}>
+                  <Line
+                    data={{
+                      labels: patternStats.list.map(t => new Date(t.fullDate).toLocaleDateString('th-TH')),
+                      datasets: [{
+                        label: 'ตัวเลขที่ออก',
+                        data: patternStats.list.map(t => t.numVal),
+                        borderColor: '#818cf8',
+                        borderWidth: 2,
+                        pointRadius: 6,
+                        pointHoverRadius: 9,
+                        pointBackgroundColor: patternStats.list.map(t => 
+                          t.direction === 'up' ? '#10b981' : t.direction === 'down' ? '#ef4444' : '#f59e0b'
+                        ),
+                        pointBorderColor: patternStats.list.map(t => 
+                          t.direction === 'up' ? '#059669' : t.direction === 'down' ? '#dc2626' : '#d97706'
+                        ),
+                        fill: false
+                      }]
+                    }}
+                    options={{
+                      responsive: true,
+                      maintainAspectRatio: false,
+                      plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                          callbacks: {
+                            title: (items) => {
+                              const idx = items[0].dataIndex;
+                              const item = patternStats.list[idx];
+                              return `งวดวันที่: ${new Date(item.fullDate).toLocaleDateString('th-TH')} (${item.dayOfWeek})`;
+                            },
+                            label: (item) => {
+                              const dObj = patternStats.list[item.dataIndex];
+                              const statusText = dObj.direction === 'up' 
+                                ? `🟢 ขึ้น (+${dObj.diff} จากงวดก่อนหน้า)` 
+                                : dObj.direction === 'down' 
+                                ? `🔴 ลง (${dObj.diff} จากงวดก่อนหน้า)` 
+                                : '🟡 เท่าเดิม (เท่ากับงวดก่อนหน้า)';
+                              return [
+                                `เลข 2 ตัว: ${dObj.number}`,
+                                `ทิศทาง: ${statusText}`
+                              ];
+                            }
+                          }
+                        }
+                      },
+                      scales: {
+                        y: { 
+                          min: 0,
+                          max: 99,
+                          grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                          ticks: { color: '#94a3b8', stepSize: 10 } 
+                        },
+                        x: { 
+                          grid: { display: false },
+                          ticks: { display: false } 
+                        }
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* SECTION 1: EVEN - ODD CIRCLES */}
+            <div style={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '14px', padding: '24px', marginBottom: '28px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', flexWrap: 'wrap', gap: '10px' }}>
+                <h4 style={{ fontSize: '17px', fontWeight: '700', color: '#f8fafc', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  🔴🔵 รูปแบบ "คู่ - คี่" ({patternMode === 'bottom' ? 'เลขล่าง 2 ตัวหน้า' : 'เลขบน 2 ตัวท้าย'})
+                </h4>
+                <div style={{ display: 'flex', gap: '14px', fontSize: '13px', fontWeight: '600' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#f97316' }}>
+                    <span style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#f97316' }}></span>
+                    เลขคู่ (Even)
+                  </span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#3b82f6' }}>
+                    <span style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#3b82f6' }}></span>
+                    เลขคี่ (Odd)
+                  </span>
+                </div>
+              </div>
+
+              {/* Responsive Wrap Container */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                {patternStats.list.map((item, idx) => (
+                  <div
+                    key={idx}
+                    title={`งวดวันที่: ${new Date(item.fullDate).toLocaleDateString('th-TH')} (${item.dayOfWeek})\nเลข 4 หลัก: ${item.num4}\nเลข 2 ตัว: ${item.number} (${item.isEven ? 'เลขคู่' : 'เลขคี่'})`}
+                    style={{
+                      width: '44px',
+                      height: '44px',
+                      borderRadius: '50%',
+                      backgroundColor: item.isEven ? '#f97316' : '#3b82f6',
+                      color: '#ffffff',
+                      fontWeight: '700',
+                      fontSize: '16px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxShadow: item.isEven ? '0 4px 12px rgba(249, 115, 22, 0.35)' : '0 4px 12px rgba(59, 130, 246, 0.35)',
+                      cursor: 'pointer',
+                      flexShrink: 0
+                    }}
+                  >
+                    {item.number}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* SECTION 2: HIGH - LOW CIRCLES (Red = High, Blue = Low) */}
+            <div style={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '14px', padding: '24px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', flexWrap: 'wrap', gap: '10px' }}>
+                <h4 style={{ fontSize: '17px', fontWeight: '700', color: '#f8fafc', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  🔴🔵 รูปแบบ "สูง - ต่ำ" ({patternMode === 'bottom' ? 'เลขล่าง 2 ตัวหน้า' : 'เลขบน 2 ตัวท้าย'})
+                </h4>
+                <div style={{ display: 'flex', gap: '14px', fontSize: '13px', fontWeight: '600' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#ef4444' }}>
+                    <span style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#ef4444' }}></span>
+                    สูง (50 - 99) [สีแดง]
+                  </span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#3b82f6' }}>
+                    <span style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#3b82f6' }}></span>
+                    ต่ำ (00 - 49) [สีน้ำเงิน]
+                  </span>
+                </div>
+              </div>
+
+              {/* Responsive Wrap Container */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                {patternStats.list.map((item, idx) => (
+                  <div
+                    key={idx}
+                    title={`งวดวันที่: ${new Date(item.fullDate).toLocaleDateString('th-TH')} (${item.dayOfWeek})\nเลข 4 หลัก: ${item.num4}\nเลข 2 ตัว: ${item.number} (${item.isHigh ? 'เลขสูง 50-99' : 'เลขต่ำ 00-49'})`}
+                    style={{
+                      width: '44px',
+                      height: '44px',
+                      borderRadius: '50%',
+                      backgroundColor: item.isHigh ? '#ef4444' : '#3b82f6',
+                      color: '#ffffff',
+                      fontWeight: '700',
+                      fontSize: '16px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxShadow: item.isHigh ? '0 4px 12px rgba(239, 68, 68, 0.35)' : '0 4px 12px rgba(59, 130, 246, 0.35)',
+                      cursor: 'pointer',
+                      flexShrink: 0
+                    }}
+                  >
+                    {item.number}
+                  </div>
                 ))}
               </div>
             </div>
@@ -408,7 +1184,7 @@ export default function App() {
 
                 {/* Day of Week Selector */}
                 <div style={{ display: 'flex', gap: '6px', background: '#0f172a', padding: '4px', borderRadius: '10px', border: '1px solid #334155' }}>
-                  {['all', 'จันทร์', 'พุธ', 'ศุกร์'].map(d => (
+                  {['all', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์'].map(d => (
                     <button
                       key={d}
                       onClick={() => setSelectedDayFilter(d)}
