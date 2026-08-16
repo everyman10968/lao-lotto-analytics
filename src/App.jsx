@@ -73,13 +73,19 @@ export default function App() {
   }, []);
 
   const computeTop50Stats = (mode) => {
-    if (!rawDraws.length) return null;
-    const targetField = mode === 'bottom' ? 'head_2digit' : 'tail_2digit';
+    const dataset = lottoType === 'thai' ? thaiDraws : rawDraws;
+    if (!dataset.length) return {
+      total: 0, hitCount: 0, missCount: 0, hitRate: '0.0', missRate: '0.0', maxStreak: 0, streakMap: {}, timeline: [], numbers: []
+    };
 
-    // Dynamically calculate Top 50 numbers from current rawDraws dataset
+    let targetField = mode === 'bottom' ? 'head_2digit' : 'tail_2digit';
+    if (lottoType === 'thai') {
+      targetField = mode === 'bottom' ? 'bottom_2digit' : 'top_2digit';
+    }
+
     const freq = {};
     for (let i = 0; i <= 99; i++) freq[i.toString().padStart(2, '0')] = 0;
-    rawDraws.forEach(r => {
+    dataset.forEach(r => {
       const val = r[targetField];
       if (val) freq[val] = (freq[val] || 0) + 1;
     });
@@ -95,7 +101,7 @@ export default function App() {
     const streakMap = {};
     const timeline = [];
 
-    rawDraws.forEach((r, idx) => {
+    dataset.forEach((r, idx) => {
       const val = r[targetField];
       const isHit = set50.has(val);
 
@@ -125,7 +131,7 @@ export default function App() {
       streakMap[currentStreak] = (streakMap[currentStreak] || 0) + 1;
     }
 
-    const total = rawDraws.length;
+    const total = dataset.length;
     return {
       total,
       hitCount,
@@ -291,9 +297,11 @@ export default function App() {
 
   const patternStats = computePatternStats(patternMode);
 
+  const activeDraws = lottoType === 'thai' ? thaiDraws : rawDraws;
+
   // Predictive Algorithm Functions
   const computePrediction = (history, field, algoType) => {
-    if (!history || history.length < 5) return { predicted50: [], scoreMap: {} };
+    if (!history || history.length < 5) return { predicted50: [], raw50Set: new Set() };
 
     const scoreMap = {};
     for (let i = 0; i <= 99; i++) scoreMap[i.toString().padStart(2, '0')] = 0;
@@ -344,10 +352,12 @@ export default function App() {
     return { predicted50: ranked50, raw50Set: new Set(allNums.slice(0, 50)) };
   };
 
-  // Walk-forward backtest simulation across all historical draws
   const computePredictionBacktest = (algoType, mode) => {
-    if (rawDraws.length < 15) return { hitRate: 0, timeline: [] };
-    const field = mode === 'bottom' ? 'head_2digit' : 'tail_2digit';
+    if (activeDraws.length < 15) return { hitRate: '0.0', maxStreak: 0, timeline: [], hitCount: 0, missCount: 0, totalTested: 0 };
+    let field = mode === 'bottom' ? 'head_2digit' : 'tail_2digit';
+    if (lottoType === 'thai') {
+      field = mode === 'bottom' ? 'bottom_2digit' : 'top_2digit';
+    }
 
     let hitCount = 0;
     let missCount = 0;
@@ -355,9 +365,9 @@ export default function App() {
     let maxStreak = 0;
     const timeline = [];
 
-    for (let i = 15; i < rawDraws.length; i++) {
-      const historySlice = rawDraws.slice(0, i);
-      const actualDraw = rawDraws[i];
+    for (let i = 15; i < activeDraws.length; i++) {
+      const historySlice = activeDraws.slice(0, i);
+      const actualDraw = activeDraws[i];
       const { raw50Set } = computePrediction(historySlice, field, algoType);
 
       const isHit = raw50Set.has(actualDraw[field]);
@@ -379,18 +389,22 @@ export default function App() {
       });
     }
 
-    const totalTested = rawDraws.length - 15;
+    const totalTested = activeDraws.length - 15;
     return {
       totalTested,
       hitCount,
       missCount,
-      hitRate: totalTested > 0 ? ((hitCount / totalTested) * 100).toFixed(1) : 0,
+      hitRate: totalTested > 0 ? ((hitCount / totalTested) * 100).toFixed(1) : '0.0',
       maxStreak,
       timeline
     };
   };
 
-  const currentPredictiveResult = computePrediction(rawDraws, predictiveTarget === 'bottom' ? 'head_2digit' : 'tail_2digit', predictiveAlgo);
+  const targetPredictiveField = lottoType === 'thai' 
+    ? (predictiveTarget === 'bottom' ? 'bottom_2digit' : 'top_2digit')
+    : (predictiveTarget === 'bottom' ? 'head_2digit' : 'tail_2digit');
+
+  const currentPredictiveResult = computePrediction(activeDraws, targetPredictiveField, predictiveAlgo);
   const currentBacktestResult = computePredictionBacktest(predictiveAlgo, predictiveTarget);
   const top50TopStats = computeTop50Stats('top');
   const top50BottomStats = computeTop50Stats('bottom');
