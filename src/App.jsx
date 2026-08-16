@@ -36,6 +36,8 @@ export default function App() {
   const [top50Mode, setTop50Mode] = useState('top');
   const [table2DMode, setTable2DMode] = useState('top');
   const [selectedDayFilter, setSelectedDayFilter] = useState('all'); // 'all', 'จันทร์', 'พุธ', 'ศุกร์'
+  const [lottoType, setLottoType] = useState('lao'); // 'lao' (Default) or 'thai'
+  const [thaiDraws, setThaiDraws] = useState([]);
   const [rawDraws, setRawDraws] = useState([]);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
