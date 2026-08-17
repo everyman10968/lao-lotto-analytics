@@ -124,6 +124,7 @@ export default function App() {
         date: new Date(r.draw_date).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' }),
         fullDate: r.draw_date,
         actualNumber: val,
+        number4Digit: r.number_4digit,
         isHit,
         missStreak: currentStreak
       });
@@ -412,6 +413,196 @@ export default function App() {
   const top50BottomStats = computeTop50Stats('bottom');
   const top50Stats = computeTop50Stats(top50Mode);
 
+  const computeCombinedAccumulatedMissData = () => {
+    const topStats = computeTop50Stats('top');
+    const bottomStats = computeTop50Stats('bottom');
+
+    if (!topStats.timeline.length || !bottomStats.timeline.length) {
+      return {
+        topTimelineRev: [],
+        bottomTimelineRev: [],
+        bothMissCount: 0,
+        topMissOnlyCount: 0,
+        bottomMissOnlyCount: 0,
+        bothHitCount: 0,
+        totalDraws: 0,
+        bothMissPct: '0.0',
+        simultaneousMissList: []
+      };
+    }
+
+    const topTimelineRev = [...topStats.timeline].reverse();
+    const bottomTimelineRev = [...bottomStats.timeline].reverse();
+
+    let bothMissCount = 0;
+    let topMissOnlyCount = 0;
+    let bottomMissOnlyCount = 0;
+    let bothHitCount = 0;
+    const simultaneousMissList = [];
+
+    topTimelineRev.forEach((topItem, i) => {
+      const botItem = bottomTimelineRev[i];
+      if (!botItem) return;
+      const isTopHit = topItem.isHit;
+      const isBotHit = botItem.isHit;
+
+      if (!isTopHit && !isBotHit) {
+        bothMissCount++;
+        simultaneousMissList.push({
+          date: topItem.date,
+          fullDate: topItem.fullDate,
+          number4Digit: topItem.number4Digit || (botItem.actualNumber + topItem.actualNumber),
+          topNum: topItem.actualNumber,
+          botNum: botItem.actualNumber,
+          topStreak: topItem.missStreak,
+          botStreak: botItem.missStreak
+        });
+      } else if (!isTopHit && isBotHit) {
+        topMissOnlyCount++;
+      } else if (isTopHit && !isBotHit) {
+        bottomMissOnlyCount++;
+      } else {
+        bothHitCount++;
+      }
+    });
+
+    const totalDraws = topTimelineRev.length;
+
+    return {
+      topTimelineRev,
+      bottomTimelineRev,
+      bothMissCount,
+      topMissOnlyCount,
+      bottomMissOnlyCount,
+      bothHitCount,
+      totalDraws,
+      bothMissPct: totalDraws > 0 ? ((bothMissCount / totalDraws) * 100).toFixed(1) : '0.0',
+      simultaneousMissList
+    };
+  };
+
+  const combinedData = computeCombinedAccumulatedMissData();
+
+  const combinedChartData = {
+    labels: combinedData.topTimelineRev.map(t => t.date),
+    datasets: [
+      {
+        label: '🔵 เลขบน (2 ตัวท้าย) - การหลุดสะสม',
+        data: combinedData.topTimelineRev.map(t => t.missStreak),
+        borderColor: '#6366f1',
+        backgroundColor: 'rgba(99, 102, 241, 0.1)',
+        borderWidth: 2,
+        pointRadius: combinedData.topTimelineRev.map((t, idx) => {
+          const b = combinedData.bottomTimelineRev[idx];
+          return (b && !t.isHit && !b.isHit) ? 7 : 3;
+        }),
+        pointHoverRadius: 9,
+        pointBackgroundColor: combinedData.topTimelineRev.map((t, idx) => {
+          const b = combinedData.bottomTimelineRev[idx];
+          if (b && !t.isHit && !b.isHit) return '#ef4444';
+          return t.missStreak > 0 ? '#818cf8' : '#10b981';
+        }),
+        tension: 0.2
+      },
+      {
+        label: '🟢 เลขล่าง (2 ตัวหน้า) - การหลุดสะสม',
+        data: combinedData.bottomTimelineRev.map(b => b.missStreak),
+        borderColor: '#10b981',
+        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+        borderWidth: 2,
+        pointRadius: combinedData.bottomTimelineRev.map((b, idx) => {
+          const t = combinedData.topTimelineRev[idx];
+          return (t && !b.isHit && !t.isHit) ? 7 : 3;
+        }),
+        pointHoverRadius: 9,
+        pointBackgroundColor: combinedData.bottomTimelineRev.map((b, idx) => {
+          const t = combinedData.topTimelineRev[idx];
+          if (t && !b.isHit && !t.isHit) return '#ef4444';
+          return b.missStreak > 0 ? '#34d399' : '#10b981';
+        }),
+        tension: 0.2
+      }
+    ]
+  };
+
+  const combinedChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: {
+      mode: 'index',
+      intersect: false
+    },
+    plugins: {
+      legend: {
+        display: true,
+        labels: { color: '#e2e8f0', font: { size: 13, family: 'Kanit' } }
+      },
+      tooltip: {
+        backgroundColor: '#0f172a',
+        titleColor: '#fbbf24',
+        bodyColor: '#e2e8f0',
+        borderColor: '#334155',
+        borderWidth: 1,
+        padding: 14,
+        callbacks: {
+          title: (context) => {
+            const idx = context[0].dataIndex;
+            const item = combinedData.topTimelineRev[idx];
+            if (!item) return '';
+            return `🗓️ งวดวันที่ ${item.date} (${new Date(item.fullDate).toLocaleDateString('th-TH')})`;
+          },
+          label: (context) => {
+            const idx = context.dataIndex;
+            const itemTop = combinedData.topTimelineRev[idx];
+            const itemBot = combinedData.bottomTimelineRev[idx];
+            if (!itemTop || !itemBot) return '';
+
+            if (context.datasetIndex === 0) {
+              const statusStr = itemTop.isHit ? '✅ ถูกรางวัล' : `❌ หลุด (สะสม ${itemTop.missStreak} งวด)`;
+              return `🔵 เลขบน [${itemTop.actualNumber}]: ${statusStr}`;
+            } else {
+              const statusStr = itemBot.isHit ? '✅ ถูกรางวัล' : `❌ หลุด (สะสม ${itemBot.missStreak} งวด)`;
+              return `🟢 เลขล่าง [${itemBot.actualNumber}]: ${statusStr}`;
+            }
+          },
+          afterBody: (context) => {
+            const idx = context[0].dataIndex;
+            const itemTop = combinedData.topTimelineRev[idx];
+            const itemBot = combinedData.bottomTimelineRev[idx];
+            if (!itemTop || !itemBot) return '';
+
+            const num4 = itemTop.number4Digit || (itemBot.actualNumber + itemTop.actualNumber);
+            const resLines = [`----------------------------------------`, `🎲 ผลรางวัล 4 หลัก: ${num4}`];
+            
+            if (!itemTop.isHit && !itemBot.isHit) {
+              resLines.push(`⚠️ WARNING: หลุดพร้อมกันทั้งบนและล่าง! (บนสะสม ${itemTop.missStreak} | ล่างสะสม ${itemBot.missStreak})`);
+            } else if (itemTop.isHit && itemBot.isHit) {
+              resLines.push(`✨ SUCCESS: ถูกรางวัลทั้งบนและล่าง!`);
+            } else if (!itemTop.isHit) {
+              resLines.push(`ℹ️ หลุดเฉพาะเลขบน (เลขล่างถูก)`);
+            } else {
+              resLines.push(`ℹ️ หลุดเฉพาะเลขล่าง (เลขบนถูก)`);
+            }
+            return resLines.join('\n');
+          }
+        }
+      }
+    },
+    scales: {
+      y: {
+        beginAtZero: true,
+        ticks: { stepSize: 1, color: '#94a3b8' },
+        grid: { color: 'rgba(255, 255, 255, 0.06)' },
+        title: { display: true, text: 'จำนวนงวดที่หลุดสะสม', color: '#94a3b8' }
+      },
+      x: {
+        ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 35, color: '#94a3b8' },
+        grid: { color: 'rgba(255, 255, 255, 0.06)' },
+        title: { display: true, text: 'งวดรางวัล (เรียงงวดล่าสุด ➔ อดีต)', color: '#94a3b8' }
+      }
+    }
+  };
+
   return (
     <div className="app-container" style={{ backgroundColor: '#0b0f19', color: '#f3f4f6', minHeight: '100vh', padding: '24px', fontFamily: "'Kanit', sans-serif" }}>
       <div style={{ maxWidth: '1240px', margin: '0 auto' }}>
@@ -486,7 +677,8 @@ export default function App() {
             { id: 'predictive', label: '🔮 วิเคราะห์โอกาสเลขเด็ด (Predictive)' },
             { id: 'pattern', label: '☯️ รูปแบบตัวเลข (คู่-คี่ & สูง-ต่ำ)' },
             { id: '2d-table', label: '📊 สถิติ 2 ตัว & เลขเด่นเดี่ยว (วิ่ง)' },
-            { id: 'history', label: '📋 ตารางประวัติผลรางวัล' }
+            { id: 'history', label: '📋 ตารางประวัติผลรางวัล' },
+            { id: 'combined-accumulated-miss', label: '📉 แผนภูมิแสดงการหลุดสะสม (บน+ล่าง)' }
           ].map(tab => (
             <button
               key={tab.id}
@@ -1339,6 +1531,122 @@ export default function App() {
                 </tbody>
               </table>
             </div>
+          </div>
+        )}
+
+        {/* TAB 6: Combined Accumulated Miss Streaks Chart (Top + Bottom) */}
+        {activeTab === 'combined-accumulated-miss' && (
+          <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '18px', padding: '28px' }}>
+            <div style={{ marginBottom: '24px' }}>
+              <h3 style={{ fontSize: '20px', fontWeight: '600', margin: 0, color: '#f8fafc' }}>
+                📉 แผนภูมิแสดงการหลุดสะสม (เรียงงวดล่าสุด ➔ อดีต)
+              </h3>
+              <p style={{ fontSize: '13px', color: '#94a3b8', marginTop: '6px' }}>
+                เปรียบเทียบการหลุดสะสมของ <strong style={{ color: '#818cf8' }}>เลขบน (2 ตัวท้าย)</strong> และ <strong style={{ color: '#34d399' }}>เลขล่าง (2 ตัวหน้า)</strong> ในแผนภูมิเดียว เพื่อวิเคราะห์โอกาสหลุดพร้อมกัน • สามารถนำเมาส์ชี้ดูรายละเอียดแต่ละงวดได้ (เรียงจากงวดล่าสุดไปสู่อดีต)
+              </p>
+            </div>
+
+            {/* Metrics Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+              <div style={{ backgroundColor: '#0f172a', border: '1px solid #ef4444', borderRadius: '14px', padding: '18px', borderLeft: '5px solid #ef4444' }}>
+                <span style={{ fontSize: '12px', color: '#fca5a5', fontWeight: '500' }}>⚠️ หลุดพร้อมกันทั้งบนและล่าง</span>
+                <div style={{ fontSize: '28px', fontWeight: '700', color: '#ef4444', margin: '6px 0' }}>{combinedData.bothMissCount} ครั้ง</div>
+                <span style={{ fontSize: '12px', color: '#94a3b8' }}>คิดเป็น {combinedData.bothMissPct}% ของทั้งหมด ({combinedData.totalDraws} งวด)</span>
+              </div>
+
+              <div style={{ backgroundColor: '#0f172a', border: '1px solid #6366f1', borderRadius: '14px', padding: '18px', borderLeft: '5px solid #6366f1' }}>
+                <span style={{ fontSize: '12px', color: '#c7d2fe', fontWeight: '500' }}>🔵 หลุดเฉพาะเลขบน (2 ตัวท้าย)</span>
+                <div style={{ fontSize: '28px', fontWeight: '700', color: '#818cf8', margin: '6px 0' }}>{combinedData.topMissOnlyCount} ครั้ง</div>
+                <span style={{ fontSize: '12px', color: '#94a3b8' }}>เลขล่างถูกรางวัล</span>
+              </div>
+
+              <div style={{ backgroundColor: '#0f172a', border: '1px solid #10b981', borderRadius: '14px', padding: '18px', borderLeft: '5px solid #10b981' }}>
+                <span style={{ fontSize: '12px', color: '#a7f3d0', fontWeight: '500' }}>🟢 หลุดเฉพาะเลขล่าง (2 ตัวหน้า)</span>
+                <div style={{ fontSize: '28px', fontWeight: '700', color: '#34d399', margin: '6px 0' }}>{combinedData.bottomMissOnlyCount} ครั้ง</div>
+                <span style={{ fontSize: '12px', color: '#94a3b8' }}>เลขบนถูกรางวัล</span>
+              </div>
+
+              <div style={{ backgroundColor: '#0f172a', border: '1px solid #3b82f6', borderRadius: '14px', padding: '18px', borderLeft: '5px solid #3b82f6' }}>
+                <span style={{ fontSize: '12px', color: '#bfdbfe', fontWeight: '500' }}>✨ ถูกรางวัลทั้งบนและล่าง</span>
+                <div style={{ fontSize: '28px', fontWeight: '700', color: '#60a5fa', margin: '6px 0' }}>{combinedData.bothHitCount} ครั้ง</div>
+                <span style={{ fontSize: '12px', color: '#94a3b8' }}>ไม่มีการหลุดในงวดนั้น</span>
+              </div>
+            </div>
+
+            {/* Combined Chart */}
+            <div style={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '14px', padding: '20px', marginBottom: '28px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
+                <h4 style={{ fontSize: '15px', margin: 0, color: '#f8fafc', fontWeight: '500' }}>
+                  📉 แผนภูมิเส้นเปรียบเทียบการหลุดสะสม (ซ้าย = งวดล่าสุด ➔ ขวา = อดีต)
+                </h4>
+                <span style={{ fontSize: '12px', color: '#94a3b8', background: '#1e293b', padding: '4px 10px', borderRadius: '6px' }}>
+                  🔴 จุดสีแดง = หลุดพร้อมกันทั้งบนและล่าง
+                </span>
+              </div>
+
+              <div style={{ position: 'relative', height: '450px', width: '100%' }}>
+                <Line data={combinedChartData} options={combinedChartOptions} />
+              </div>
+            </div>
+
+            {/* Simultaneous Miss Table */}
+            <div>
+              <h4 style={{ fontSize: '16px', color: '#f8fafc', margin: '0 0 14px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                ⚠️ รายการงวดที่มีการหลุดพร้อมกันทั้งบนและล่าง (Simultaneous Misses)
+              </h4>
+
+              <div style={{ overflowX: 'auto', maxHeight: '400px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px' }}>
+                  <thead style={{ position: 'sticky', top: 0, backgroundColor: '#0f172a', color: '#94a3b8' }}>
+                    <tr>
+                      <th style={{ padding: '12px 16px' }}>งวดวันที่</th>
+                      <th style={{ padding: '12px 16px' }}>วัน</th>
+                      <th style={{ padding: '12px 16px' }}>เลขรางวัล 4 หลัก</th>
+                      <th style={{ padding: '12px 16px' }}>🔵 เลขบน (2 ตัวท้าย)</th>
+                      <th style={{ padding: '12px 16px' }}>🟢 เลขล่าง (2 ตัวหน้า)</th>
+                      <th style={{ padding: '12px 16px' }}>หลุดสะสมบน</th>
+                      <th style={{ padding: '12px 16px' }}>หลุดสะสมล่าง</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {combinedData.simultaneousMissList.length === 0 ? (
+                      <tr>
+                        <td colSpan="7" style={{ textAlign: 'center', padding: '24px', color: '#34d399' }}>
+                          ✨ ไม่พบงวดที่หลุดพร้อมกันทั้งบนและล่าง
+                        </td>
+                      </tr>
+                    ) : (
+                      combinedData.simultaneousMissList.map((item, idx) => (
+                        <tr key={idx} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)', backgroundColor: 'rgba(239, 68, 68, 0.05)' }}>
+                          <td style={{ padding: '12px 16px', fontWeight: '600', color: '#f8fafc' }}>
+                            {new Date(item.fullDate).toLocaleDateString('th-TH')}
+                          </td>
+                          <td style={{ padding: '12px 16px', color: '#cbd5e1' }}>{getThaiDayOfWeek(item.fullDate)}</td>
+                          <td style={{ padding: '12px 16px' }}>
+                            <span style={{ backgroundColor: 'rgba(245, 158, 11, 0.15)', border: '1px solid rgba(245, 158, 11, 0.3)', color: '#f59e0b', fontWeight: '700', padding: '4px 10px', borderRadius: '6px' }}>
+                              {item.number4Digit}
+                            </span>
+                          </td>
+                          <td style={{ padding: '12px 16px' }}>
+                            <span style={{ backgroundColor: 'rgba(99, 102, 241, 0.15)', border: '1px solid rgba(99, 102, 241, 0.3)', color: '#818cf8', fontWeight: '700', padding: '4px 10px', borderRadius: '6px' }}>
+                              {item.topNum}
+                            </span>
+                          </td>
+                          <td style={{ padding: '12px 16px' }}>
+                            <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.3)', color: '#34d399', fontWeight: '700', padding: '4px 10px', borderRadius: '6px' }}>
+                              {item.botNum}
+                            </span>
+                          </td>
+                          <td style={{ padding: '12px 16px', color: '#818cf8', fontWeight: '600' }}>หลุดสะสม {item.topStreak} งวด</td>
+                          <td style={{ padding: '12px 16px', color: '#34d399', fontWeight: '600' }}>หลุดสะสม {item.botStreak} งวด</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
           </div>
         )}
 
