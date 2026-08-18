@@ -43,6 +43,8 @@ export default function App() {
   const [copied, setCopied] = useState(false);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [zeroMode, setZeroMode] = useState('top');
+  const [copiedZero, setCopiedZero] = useState(false);
 
   const fetchLaoLottoData = async () => {
     setLoading(true);
@@ -413,6 +415,155 @@ export default function App() {
   const top50BottomStats = computeTop50Stats('bottom');
   const top50Stats = computeTop50Stats(top50Mode);
 
+  const computeZeroOccurrenceStats = () => {
+    if (!rawDraws.length) {
+      return {
+        top: { zeroNumbers: [], zeroCount: 0, zeroPct: '0.0', oneCount: 0, histogram: { zeroHits: 0, oneHit: 0, twoHits: 0, multiHits: 0 }, fullList: [] },
+        bottom: { zeroNumbers: [], zeroCount: 0, zeroPct: '0.0', oneCount: 0, histogram: { zeroHits: 0, oneHit: 0, twoHits: 0, multiHits: 0 }, fullList: [] },
+        combined: { zeroNumbers: [], zeroCount: 0, zeroPct: '0.0' },
+        totalDraws: 0
+      };
+    }
+
+    const totalDraws = rawDraws.length;
+    const topStatsMap = {};
+    const botStatsMap = {};
+
+    for (let i = 0; i <= 99; i++) {
+      const numStr = i.toString().padStart(2, '0');
+      topStatsMap[numStr] = { count: 0, lastDrawIndex: -1, lastDate: null };
+      botStatsMap[numStr] = { count: 0, lastDrawIndex: -1, lastDate: null };
+    }
+
+    const reversedDraws = [...rawDraws].reverse();
+
+    reversedDraws.forEach((r, idx) => {
+      if (r.tail_2digit && topStatsMap[r.tail_2digit]) {
+        topStatsMap[r.tail_2digit].count++;
+        if (topStatsMap[r.tail_2digit].lastDrawIndex === -1) {
+          topStatsMap[r.tail_2digit].lastDrawIndex = idx;
+          topStatsMap[r.tail_2digit].lastDate = r.draw_date;
+        }
+      }
+      if (r.head_2digit && botStatsMap[r.head_2digit]) {
+        botStatsMap[r.head_2digit].count++;
+        if (botStatsMap[r.head_2digit].lastDrawIndex === -1) {
+          botStatsMap[r.head_2digit].lastDrawIndex = idx;
+          botStatsMap[r.head_2digit].lastDate = r.draw_date;
+        }
+      }
+    });
+
+    const buildSectionData = (statsMap) => {
+      const zeroList = [];
+      const oneList = [];
+      const twoList = [];
+      const multiList = [];
+      const fullList = [];
+
+      for (let i = 0; i <= 99; i++) {
+        const numStr = i.toString().padStart(2, '0');
+        const item = statsMap[numStr];
+        const count = item.count;
+        const lastSeenAgo = count === 0 ? totalDraws : item.lastDrawIndex;
+
+        const obj = {
+          number: numStr,
+          count: count,
+          lastSeenAgo: lastSeenAgo,
+          lastDate: item.lastDate,
+          percentage: totalDraws > 0 ? ((count / totalDraws) * 100).toFixed(1) : '0'
+        };
+
+        fullList.push(obj);
+
+        if (count === 0) zeroList.push(numStr);
+        else if (count === 1) oneList.push(numStr);
+        else if (count === 2) twoList.push(numStr);
+        else multiList.push(numStr);
+      }
+
+      fullList.sort((a, b) => a.count - b.count || parseInt(a.number) - parseInt(b.number));
+
+      const histogram = {
+        zeroHits: zeroList.length,
+        oneHit: oneList.length,
+        twoHits: twoList.length,
+        multiHits: multiList.length
+      };
+
+      return {
+        zeroNumbers: zeroList.sort((a, b) => parseInt(a) - parseInt(b)),
+        oneNumbers: oneList.sort((a, b) => parseInt(a) - parseInt(b)),
+        zeroCount: zeroList.length,
+        zeroPct: ((zeroList.length / 100) * 100).toFixed(1),
+        oneCount: oneList.length,
+        histogram,
+        fullList
+      };
+    };
+
+    const topSec = buildSectionData(topStatsMap);
+    const botSec = buildSectionData(botStatsMap);
+
+    const combinedZeroList = [];
+    for (let i = 0; i <= 99; i++) {
+      const numStr = i.toString().padStart(2, '0');
+      if (topStatsMap[numStr].count === 0 && botStatsMap[numStr].count === 0) {
+        combinedZeroList.push(numStr);
+      }
+    }
+
+    return {
+      top: topSec,
+      bottom: botSec,
+      combined: {
+        zeroNumbers: combinedZeroList.sort((a, b) => parseInt(a) - parseInt(b)),
+        zeroCount: combinedZeroList.length,
+        zeroPct: ((combinedZeroList.length / 100) * 100).toFixed(1)
+      },
+      totalDraws
+    };
+  };
+
+  const zeroStats = computeZeroOccurrenceStats();
+  const currentZeroTarget = zeroMode === 'top' ? zeroStats.top : (zeroMode === 'bottom' ? zeroStats.bottom : {
+    zeroNumbers: zeroStats.combined.zeroNumbers,
+    zeroCount: zeroStats.combined.zeroCount,
+    zeroPct: zeroStats.combined.zeroPct,
+    oneCount: 0,
+    histogram: {
+      zeroHits: zeroStats.combined.zeroCount,
+      oneHit: zeroStats.top.histogram.oneHit,
+      twoHits: zeroStats.top.histogram.twoHits,
+      multiHits: zeroStats.top.histogram.multiHits
+    },
+    fullList: zeroStats.top.fullList
+  });
+
+  const zeroDistChartData = {
+    labels: ['0 ครั้ง (ไม่เคยออก)', '1 ครั้ง', '2 ครั้ง', '3+ ครั้ง (ออกบ่อย)'],
+    datasets: [{
+      label: 'จำนวนชุดเลข (ตัว)',
+      data: [
+        currentZeroTarget.histogram.zeroHits,
+        currentZeroTarget.histogram.oneHit,
+        currentZeroTarget.histogram.twoHits,
+        currentZeroTarget.histogram.multiHits
+      ],
+      backgroundColor: ['#ef4444', '#f59e0b', '#818cf8', '#10b981'],
+      borderRadius: 8
+    }]
+  };
+
+  const zeroRatioChartData = {
+    labels: ['ไม่เคยออกเลย (0 ครั้ง)', 'เคยออกรางวัลแล้ว'],
+    datasets: [{
+      data: [currentZeroTarget.zeroCount, 100 - currentZeroTarget.zeroCount],
+      backgroundColor: ['#ef4444', '#10b981']
+    }]
+  };
+
   const computeCombinedAccumulatedMissData = () => {
     const topStats = computeTop50Stats('top');
     const bottomStats = computeTop50Stats('bottom');
@@ -674,6 +825,7 @@ export default function App() {
         <div style={{ display: 'flex', gap: '8px', borderBottom: '2px solid #1e293b', paddingBottom: '10px', marginBottom: '24px', overflowX: 'auto' }}>
           {[
             { id: 'top50', label: '🎯 วิเคราะห์ชุดเลข 50 ตัว' },
+            { id: 'zero-occurrence', label: '❄️ สถิติเลขที่ไม่เคยออกเลย (Zero Miss)' },
             { id: 'predictive', label: '🔮 วิเคราะห์โอกาสเลขเด็ด (Predictive)' },
             { id: 'pattern', label: '☯️ รูปแบบตัวเลข (คู่-คี่ & สูง-ต่ำ)' },
             { id: '2d-table', label: '📊 สถิติ 2 ตัว & เลขเด่นเดี่ยว (วิ่ง)' },
@@ -1642,6 +1794,176 @@ export default function App() {
                         </tr>
                       ))
                     )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+          </div>
+        )}
+
+        {/* TAB 7: Zero-Occurrence / Cold Numbers Analytics */}
+        {activeTab === 'zero-occurrence' && (
+          <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '18px', padding: '28px' }}>
+            <div style={{ marginBottom: '20px' }}>
+              <h3 style={{ fontSize: '20px', fontWeight: '600', margin: 0, color: '#f8fafc' }}>
+                ❄️ วิเคราะห์สถิติเลขที่ไม่เคยออกเลย (Zero-Occurrence / Cold Numbers)
+              </h3>
+              <p style={{ fontSize: '13px', color: '#94a3b8', marginTop: '6px' }}>
+                วิเคราะห์ตัวเลข 2 หลัก (00 - 99) ที่ยังไม่เคยออกรางวัลเลยนับตั้งแต่ต้นปี 2569 ({zeroStats.totalDraws} งวด) • ตรวจสอบความถี่ แผนภูมิกระจายตัว และรายชื่อตัวเลขที่ดับเย็น
+              </p>
+            </div>
+
+            {/* Sub Tabs */}
+            <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+              {[
+                { mode: 'top', label: '🔵 เลขบน (2 ตัวท้าย)' },
+                { mode: 'bottom', label: '🟢 เลขล่าง (2 ตัวหน้า)' },
+                { mode: 'combined', label: '🟣 รวมบน+ล่าง (ไม่ออกทั้งคู่)' }
+              ].map(item => (
+                <button
+                  key={item.mode}
+                  onClick={() => setZeroMode(item.mode)}
+                  style={{
+                    backgroundColor: zeroMode === item.mode ? '#6366f1' : '#0f172a',
+                    color: zeroMode === item.mode ? '#fff' : '#94a3b8',
+                    border: '1px solid #334155',
+                    padding: '8px 18px',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Summary Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+              <div style={{ backgroundColor: '#0f172a', border: '1px solid #38bdf8', borderRadius: '14px', padding: '18px', borderLeft: '5px solid #38bdf8' }}>
+                <span style={{ fontSize: '12px', color: '#bae6fd', fontWeight: '500' }}>❄️ จำนวนเลขที่ไม่เคยออกเลย (0 ครั้ง)</span>
+                <div style={{ fontSize: '28px', fontWeight: '700', color: '#38bdf8', margin: '6px 0' }}>{currentZeroTarget.zeroCount} ตัว</div>
+                <span style={{ fontSize: '12px', color: '#94a3b8' }}>คิดเป็น {currentZeroTarget.zeroPct}% ของเลข 100 ตัว</span>
+              </div>
+
+              <div style={{ backgroundColor: '#0f172a', border: '1px solid #a78bfa', borderRadius: '14px', padding: '18px', borderLeft: '5px solid #a78bfa' }}>
+                <span style={{ fontSize: '12px', color: '#ddd6fe', fontWeight: '500' }}>🧊 จำนวนเลขที่ออกเพียง 1 ครั้ง</span>
+                <div style={{ fontSize: '28px', fontWeight: '700', color: '#a78bfa', margin: '6px 0' }}>{zeroMode === 'combined' ? '-' : `${currentZeroTarget.oneCount} ตัว`}</div>
+                <span style={{ fontSize: '12px', color: '#94a3b8' }}>กลุ่มเลขเย็นใกล้เคียง</span>
+              </div>
+
+              <div style={{ backgroundColor: '#0f172a', border: '1px solid #f59e0b', borderRadius: '14px', padding: '18px', borderLeft: '5px solid #f59e0b' }}>
+                <span style={{ fontSize: '12px', color: '#fde68a', fontWeight: '500' }}>⏳ ระยะเวลาไม่เคยออกสะสม</span>
+                <div style={{ fontSize: '28px', fontWeight: '700', color: '#f59e0b', margin: '6px 0' }}>{zeroStats.totalDraws} งวด</div>
+                <span style={{ fontSize: '12px', color: '#94a3b8' }}>ไม่เคยออกตั้งแต่ต้นปี 2569</span>
+              </div>
+
+              <div style={{ backgroundColor: '#0f172a', border: '1px solid #10b981', borderRadius: '14px', padding: '18px', borderLeft: '5px solid #10b981' }}>
+                <span style={{ fontSize: '12px', color: '#a7f3d0', fontWeight: '500' }}>📊 สัดส่วนเลขเคยออกรางวัลแล้ว</span>
+                <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981', margin: '6px 0' }}>{(100 - parseFloat(currentZeroTarget.zeroPct)).toFixed(1)}%</div>
+                <span style={{ fontSize: '12px', color: '#94a3b8' }}>อัตราครอบคลุมรางวัล</span>
+              </div>
+            </div>
+
+            {/* Pill Box */}
+            <div style={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '14px', padding: '20px', marginBottom: '24px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+                <strong style={{ fontSize: '16px', color: '#f8fafc' }}>
+                  📋 รายชื่อชุดเลขที่ไม่เคยออกเลย ({zeroMode === 'top' ? 'เลขบน' : (zeroMode === 'bottom' ? 'เลขล่าง' : 'รวมบน+ล่าง')} - {currentZeroTarget.zeroCount} ตัว):
+                </strong>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(currentZeroTarget.zeroNumbers.join(', '));
+                    setCopiedZero(true);
+                    setTimeout(() => setCopiedZero(false), 2000);
+                  }}
+                  style={{ backgroundColor: '#6366f1', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '500', fontSize: '13px' }}
+                >
+                  {copiedZero ? <Check size={14} /> : <Copy size={14} />}
+                  <span>{copiedZero ? 'คัดลอกสำเร็จ!' : '📋 คัดลอกเลขที่ไม่เคยออกเลย'}</span>
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                {currentZeroTarget.zeroNumbers.length === 0 ? (
+                  <span style={{ color: '#34d399' }}>✨ ไม่มีเลขที่ไม่เคยออกเลย</span>
+                ) : (
+                  currentZeroTarget.zeroNumbers.map(n => (
+                    <span key={n} style={{ border: '1px solid #38bdf8', color: '#38bdf8', backgroundColor: 'rgba(56, 189, 248, 0.15)', padding: '6px 12px', borderRadius: '8px', fontWeight: '600', fontSize: '15px' }}>
+                      {n}
+                    </span>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Charts Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(450px, 1fr))', gap: '20px', marginBottom: '24px' }}>
+              <div style={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '14px', padding: '20px' }}>
+                <h4 style={{ fontSize: '15px', color: '#f8fafc', margin: '0 0 14px 0', fontWeight: '500' }}>
+                  📊 แผนภูมิแท่งกระจายความถี่การออกรางวัล ({zeroMode === 'top' ? 'เลขบน' : (zeroMode === 'bottom' ? 'เลขล่าง' : 'รวมบน+ล่าง')})
+                </h4>
+                <div style={{ position: 'relative', height: '240px' }}>
+                  <Bar data={zeroDistChartData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 5, color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.06)' } }, x: { ticks: { color: '#94a3b8' }, grid: { display: false } } } }} />
+                </div>
+              </div>
+
+              <div style={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '14px', padding: '20px' }}>
+                <h4 style={{ fontSize: '15px', color: '#f8fafc', margin: '0 0 14px 0', fontWeight: '500' }}>
+                  🍩 สัดส่วนจำนวนเลขที่ไม่เคยออก vs เลขที่เคยออก
+                </h4>
+                <div style={{ position: 'relative', height: '240px' }}>
+                  <Doughnut data={zeroRatioChartData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true, labels: { color: '#e2e8f0' } } } }} />
+                </div>
+              </div>
+            </div>
+
+            {/* Detailed Table */}
+            <div style={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '14px', padding: '20px' }}>
+              <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#f8fafc', marginBottom: '14px' }}>
+                📋 ตารางอันดับความเย็นของตัวเลข (เรียงจากไม่ออกเลย ➔ ออกบ่อย)
+              </h4>
+              <div style={{ overflowX: 'auto', maxHeight: '450px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '15px' }}>
+                  <thead style={{ position: 'sticky', top: 0, backgroundColor: '#090d16', color: '#94a3b8' }}>
+                    <tr>
+                      <th style={{ padding: '12px 14px', textAlign: 'center', width: '70px' }}>อันดับ</th>
+                      <th style={{ padding: '12px 14px' }}>เลข 2 ตัว</th>
+                      <th style={{ padding: '12px 14px' }}>สถานะ</th>
+                      <th style={{ padding: '12px 14px' }}>จำนวนครั้งที่ออก</th>
+                      <th style={{ padding: '12px 14px' }}>ไม่ออกมาแล้ว (งวด)</th>
+                      <th style={{ padding: '12px 14px' }}>สัดส่วนความถี่</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(currentZeroTarget.fullList || zeroStats.top.fullList).map((item, idx) => {
+                      const isZero = item.count === 0;
+                      return (
+                        <tr key={idx} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                          <td style={{ padding: '12px 14px', textAlign: 'center', color: '#94a3b8', fontWeight: '600' }}>{idx + 1}</td>
+                          <td style={{ padding: '12px 14px' }}>
+                            <span style={{ backgroundColor: isZero ? 'rgba(239, 68, 68, 0.15)' : 'rgba(99, 102, 241, 0.15)', border: isZero ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid rgba(99, 102, 241, 0.3)', color: isZero ? '#ef4444' : '#818cf8', fontWeight: '700', padding: '4px 10px', borderRadius: '6px' }}>
+                              {item.number}
+                            </span>
+                          </td>
+                          <td style={{ padding: '12px 14px' }}>
+                            {isZero ? (
+                              <span style={{ backgroundColor: 'rgba(239, 68, 68, 0.2)', color: '#ef4444', padding: '4px 10px', borderRadius: '6px', fontWeight: '600', fontSize: '13px' }}>❄️ ไม่เคยออกเลย</span>
+                            ) : (
+                              <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.2)', color: '#34d399', padding: '4px 10px', borderRadius: '6px', fontWeight: '500', fontSize: '13px' }}>ออก {item.count} ครั้ง</span>
+                            )}
+                          </td>
+                          <td style={{ padding: '12px 14px', fontWeight: '600', color: isZero ? '#ef4444' : '#f8fafc' }}>{item.count} ครั้ง</td>
+                          <td style={{ padding: '12px 14px', color: isZero ? '#ef4444' : '#94a3b8' }}>
+                            {isZero ? `ไม่ออกเลย (${zeroStats.totalDraws} งวด)` : `ผ่านมา ${item.lastSeenAgo} งวด`}
+                          </td>
+                          <td style={{ padding: '12px 14px', color: '#f59e0b', fontWeight: '600' }}>{item.percentage}%</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

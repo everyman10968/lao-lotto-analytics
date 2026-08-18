@@ -25,7 +25,26 @@ const MONTH_MAP = {
 const DAY_NAMES = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
 
 function parseThaiDate(text) {
-  const words = text.split(/\s+/);
+  if (!text) return null;
+  
+  const slashMatch = text.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+  if (slashMatch) {
+    const day = parseInt(slashMatch[1], 10);
+    const month = parseInt(slashMatch[2], 10);
+    let year = parseInt(slashMatch[3], 10);
+    
+    if (year < 100) year += 2500;
+    const yearAD = year > 2500 ? year - 543 : year;
+    
+    const dateStr = `${yearAD}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+    const d = new Date(`${dateStr}T00:00:00Z`);
+    if (!isNaN(d.getTime())) {
+      const dayOfWeek = DAY_NAMES[d.getUTCDay()];
+      return { dateStr, dayOfWeek };
+    }
+  }
+
+  const words = text.trim().split(/\s+/);
   for (let i = 0; i < words.length - 2; i++) {
     const day = words[i].replace(/[^\d]/g, '');
     const monthName = words[i+1];
@@ -36,11 +55,38 @@ function parseThaiDate(text) {
       const month = MONTH_MAP[monthName];
       const dateStr = `${yearAD}-${month}-${day.padStart(2, '0')}`;
       const d = new Date(`${dateStr}T00:00:00Z`);
-      const dayOfWeek = DAY_NAMES[d.getUTCDay()];
-      return { dateStr, dayOfWeek };
+      if (!isNaN(d.getTime())) {
+        const dayOfWeek = DAY_NAMES[d.getUTCDay()];
+        return { dateStr, dayOfWeek };
+      }
     }
   }
   return null;
+}
+
+function extractDrawEntries(text) {
+  const entries = [];
+  const regex = /(?:ผลหวยลาววันนี้|หวยลาววันที่|หวยลาวงวด|หวยลาว|งวดวันที่)\s*(\d{1,2}(?:\/\d{1,2}\/\d{2,4}|\s+[^\s\d]+\s+\d{4}))[\s\S]*?เลข 4 ตัว\s*[:\s]*([xX\d]{4})/gi;
+  
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    const dateText = match[1];
+    const num4 = match[2];
+    
+    if (/^\d{4}$/.test(num4)) {
+      const dateObj = parseThaiDate(dateText);
+      if (dateObj) {
+        if (!entries.some(e => e.dateStr === dateObj.dateStr)) {
+          entries.push({
+            dateStr: dateObj.dateStr,
+            dayOfWeek: dateObj.dayOfWeek,
+            number4Digit: num4
+          });
+        }
+      }
+    }
+  }
+  return entries;
 }
 
 export async function fetchLatestAndSyncSupabase() {
@@ -78,32 +124,29 @@ export async function fetchLatestAndSyncSupabase() {
           timeout: 8000
         });
         const $art = cheerio.load(artRes.data);
-        const artTitle = $art('title').text();
+        $art('script, style').remove();
         const text = $art('body').text().replace(/\s+/g, ' ');
 
-        const dateObj = parseThaiDate(artTitle) || parseThaiDate(text);
-        const numMatch = text.match(/เลข 4 ตัว\s*[:\s]*(\d{4})/i) || 
-                         text.match(/4 ตัว\s*[:\s]*(\d{4})/i) ||
-                         text.match(/เลข 4 ตัวออก\s*(\d{4})/i) ||
-                         text.match(/4 ตัวคือ\s*(\d{4})/i);
-
-        if (dateObj && numMatch) {
-          const num4 = numMatch[1];
-          recordsToSync.push({
-            draw_date: dateObj.dateStr,
-            day_of_week: dateObj.dayOfWeek,
-            number_full: num4,
-            number_4digit: num4,
-            head_2digit: num4.slice(0, 2),
-            tail_2digit: num4.slice(2),
-            tail_3digit: num4.slice(1)
-          });
+        const validEntries = extractDrawEntries(text);
+        for (const entry of validEntries) {
+          if (!recordsToSync.some(r => r.draw_date === entry.dateStr)) {
+            const num4 = entry.number4Digit;
+            recordsToSync.push({
+              draw_date: entry.dateStr,
+              day_of_week: entry.dayOfWeek,
+              number_full: num4,
+              number_4digit: num4,
+              head_2digit: num4.slice(0, 2),
+              tail_2digit: num4.slice(2),
+              tail_3digit: num4.slice(1)
+            });
+          }
         }
       } catch (err) {}
     }
 
     if (recordsToSync.length > 0) {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('lao_lottery_analytics')
         .upsert(recordsToSync, { onConflict: 'draw_date' });
       
